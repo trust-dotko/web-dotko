@@ -6,9 +6,8 @@ import { verifyGSTIN } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
 const FREE_SEARCH_LIMIT = 1;
-const EXAMPLE_GSTS = ['27AADCB2230M1ZP', '29ABCFM9634R1ZF', '07AAHCS1429D1ZX'];
 
-export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN…' }) {
+export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN to check trust score...' }) {
   const [value, setValue]     = useState('');
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,23 +19,31 @@ export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN
     setError('');
 
     if (!isValidGST(q)) {
-      setError('Enter a valid 15-character GSTIN (e.g. 27AADCB2230M1ZP)');
+      setError('Enter a valid 15-character GSTIN (e.g. 24CUUPP7030B1ZL)');
       return;
     }
 
-    // Enforce free search limit for non-authenticated users
+    // Check search limit for non-authenticated users
     if (!user) {
       const count = parseInt(localStorage.getItem('dtk_search_count') || '0', 10);
       if (count >= FREE_SEARCH_LIMIT) {
-        navigate('/login');
+        // Smoothly navigate to signup if they've used their free search
+        navigate('/signup', { state: { prefillGst: q } });
         return;
       }
-      localStorage.setItem('dtk_search_count', String(count + 1));
     }
 
     setLoading(true);
     try {
       const result = await verifyGSTIN(q);
+      
+      // Successfully got data, now increment guest counter if applicable
+      if (!user) {
+        const count = parseInt(localStorage.getItem('dtk_search_count') || '0', 10);
+        localStorage.setItem('dtk_search_count', String(count + 1));
+      }
+
+      // Smooth transition to report
       navigate(`/report/${q}`, { state: { gstData: result.data } });
     } catch (err) {
       const msg = err?.message || 'Failed to fetch GST data. Please try again.';
@@ -61,7 +68,7 @@ export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN
           id="gst-search-input"
           type="text"
           value={value}
-          onChange={e => { setValue(e.target.value); setError(''); }}
+          onChange={e => { setValue(e.target.value.toUpperCase()); setError(''); }}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder={placeholder}
           className={inputCls}
@@ -77,25 +84,10 @@ export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN
       </div>
 
       {error && (
-        <p className="flex items-center gap-1.5 text-red-600 text-sm mt-2">
+        <p className="flex items-center gap-1.5 text-red-600 text-sm mt-3">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {error}
         </p>
-      )}
-
-      {large && (
-        <div className="flex flex-wrap gap-2 mt-3 justify-center">
-          <span className="text-xs text-slate-400">Try:</span>
-          {EXAMPLE_GSTS.map(g => (
-            <button
-              key={g}
-              onClick={() => { setValue(g); handleSearch(g); }}
-              className="text-xs text-brand-600 hover:text-brand-800 font-mono underline underline-offset-2"
-            >
-              {g}
-            </button>
-          ))}
-        </div>
       )}
     </div>
   );
