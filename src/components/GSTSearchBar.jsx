@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, AlertCircle, Loader2 } from 'lucide-react';
 import { isValidGST } from '../data/trustEngine';
-import { verifyGSTIN } from '../config/firebase';
+import { verifyGSTIN, db } from '../config/firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 
 const FREE_SEARCH_LIMIT = 1;
@@ -37,10 +38,40 @@ export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN
     try {
       const result = await verifyGSTIN(q);
       
-      // Successfully got data, now increment guest counter if applicable
+      // Successfully got data, handle analytics / limits
       if (!user) {
         const count = parseInt(localStorage.getItem('dtk_search_count') || '0', 10);
         localStorage.setItem('dtk_search_count', String(count + 1));
+      } else {
+        // Save full company data to global cache
+        try {
+          const companyRef = doc(db, 'companies', q);
+          const businessData = {
+            gst: q,
+            name:               result.data?.tradeName || result.data?.legalName || q,
+            legalName:          result.data?.legalName || '',
+            state:              result.data?.principalAddress?.state || result.data?.stateCode || '',
+            city:               result.data?.principalAddress?.district || '',
+            type:               result.data?.constitutionOfBusiness || '',
+            incorporated:       result.data?.registrationDate || '',
+            industry:           '',
+            registeredAddress:  result.data?.principalAddress?.fullAddress || '',
+            status:             result.data?.status || '',
+            updatedAt:          serverTimestamp()
+          };
+          await setDoc(companyRef, businessData, { merge: true });
+
+          // Save to user's recent searches
+          const searchRef = doc(db, 'users', user.uid, 'searches', q);
+          await setDoc(searchRef, {
+            gst: q,
+            name: businessData.name,
+            score: 50, // Default base score
+            searchedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (e) {
+          console.warn('Failed to cache search data:', e);
+        }
       }
 
       // Smooth transition to report

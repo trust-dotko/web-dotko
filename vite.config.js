@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'fs'
+import path from 'path'
 
 export default defineConfig(({ mode }) => {
   // Load ALL env vars (including non-VITE_ ones for the dev API middleware)
@@ -27,7 +29,27 @@ function devApiPlugin(env) {
 
   let cachedToken = null
   let tokenExpiry = null
-  const devProfiles = new Map() // In-memory profile store for dev mode
+  
+  // Persist dev profiles to disk so they survive dev server restarts!
+  const profilesPath = path.resolve(process.cwd(), '.dev-profiles.json')
+  
+  let devProfiles = new Map()
+  try {
+    if (fs.existsSync(profilesPath)) {
+      const data = JSON.parse(fs.readFileSync(profilesPath, 'utf8'))
+      devProfiles = new Map(Object.entries(data))
+    }
+  } catch (e) {
+    console.warn('[dev-api] Could not load persisted profiles:', e.message)
+  }
+
+  function saveProfiles() {
+    try {
+      fs.writeFileSync(profilesPath, JSON.stringify(Object.fromEntries(devProfiles)), 'utf8')
+    } catch (e) {
+      console.warn('[dev-api] Could not save persisted profiles:', e.message)
+    }
+  }
 
   async function authenticate() {
     if (cachedToken && tokenExpiry && Date.now() < tokenExpiry) return cachedToken
@@ -200,9 +222,17 @@ function devApiPlugin(env) {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           }
-          // Store in dev memory by auth header token hash (simple approach)
+          // Store in dev memory by auth header uid
           const authHeader = req.headers?.authorization || ''
-          devProfiles.set(authHeader, profile)
+          let uid = 'unknown-user'
+          try {
+            const tokenStr = authHeader.replace('Bearer ', '')
+            const payload = JSON.parse(Buffer.from(tokenStr.split('.')[1], 'base64').toString())
+            if (payload.user_id) uid = payload.user_id
+          } catch (e) {}
+
+          devProfiles.set(uid, profile)
+          saveProfiles() // Persist
           console.log('[dev-api] Profile registered:', profile.businessName || profile.email)
           return res.end(JSON.stringify({ success: true, profile }))
         }
@@ -210,19 +240,27 @@ function devApiPlugin(env) {
         // ---- /api/auth/profile ----
         if (req.url === '/api/auth/profile') {
           const authHeader = req.headers?.authorization || ''
+          let uid = 'unknown-user'
+          try {
+            const tokenStr = authHeader.replace('Bearer ', '')
+            const payload = JSON.parse(Buffer.from(tokenStr.split('.')[1], 'base64').toString())
+            if (payload.user_id) uid = payload.user_id
+          } catch (e) {}
+          
           if (req.method === 'GET') {
-            const profile = devProfiles.get(authHeader) || null
+            const profile = devProfiles.get(uid) || null
             return res.end(JSON.stringify({ success: true, profile }))
           }
           if (req.method === 'POST') {
-            const existing = devProfiles.get(authHeader) || {}
+            const existing = devProfiles.get(uid) || {}
             const body = req.body || {}
             const allowed = ['businessName', 'gst', 'entityType', 'pan', 'city', 'state', 'establishmentYear', 'profileComplete']
             for (const key of allowed) {
               if (body[key] !== undefined) existing[key] = body[key]
             }
             existing.updatedAt = new Date().toISOString()
-            devProfiles.set(authHeader, existing)
+            devProfiles.set(uid, existing)
+            saveProfiles() // Persist
             return res.end(JSON.stringify({ success: true, profile: existing }))
           }
         }

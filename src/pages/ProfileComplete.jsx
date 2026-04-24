@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { CheckCircle, Loader2, Building2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../config/firebase';
@@ -13,6 +13,7 @@ const ENTITY_TYPES = [
 export default function ProfileComplete() {
   const { user, profile, refreshProfile, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [form, setForm] = useState({
     businessName: '',
@@ -73,7 +74,8 @@ export default function ProfileComplete() {
       if (!res.ok) throw new Error('Failed to save');
       await refreshProfile();
       setSuccess(true);
-      setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
+      const destination = location.state?.from || '/dashboard';
+      setTimeout(() => navigate(destination, { replace: true }), 1500);
     } catch (err) {
       setError('Failed to save profile. Please try again.');
     } finally {

@@ -184,13 +184,44 @@ export default function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 py-8 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-slate-600 text-sm">
-            <img src="/icon.png" alt="Dotko" className="w-5 h-5 rounded" />
-            <span>dotko.in — MSME Trust Intelligence Platform</span>
+      <footer className="border-t border-slate-200 py-12 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-start justify-between gap-8">
+          
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-slate-900 font-bold text-lg">
+              <img src="/icon.png" alt="Dotko" className="w-6 h-6 rounded" />
+              <span>dotko.in</span>
+            </div>
+            <p className="text-sm text-slate-500 max-w-sm">
+              India's MSME Trust Intelligence Platform. Verifying trust before you do business.
+            </p>
+            <p className="text-xs text-slate-400 mt-2">© {new Date().getFullYear()} Dotko.in. All rights reserved.</p>
           </div>
-          <p className="text-xs text-slate-400">© {new Date().getFullYear()} Dotko.in. All rights reserved.</p>
+
+          <div className="flex flex-col sm:flex-row gap-12 sm:gap-24">
+            {/* Contact */}
+            <div className="flex flex-col gap-3 text-sm">
+              <h4 className="font-bold text-slate-900 uppercase tracking-widest text-xs mb-1">Contact</h4>
+              <a href="mailto:trust@dotko.in" className="text-slate-500 hover:text-brand-800 transition-colors">
+                Email: trust@dotko.in
+              </a>
+              <a href="https://dotko.in" className="text-slate-500 hover:text-brand-800 transition-colors">
+                Website: dotko.in
+              </a>
+            </div>
+
+            {/* Legal */}
+            <div className="flex flex-col gap-3 text-sm">
+              <h4 className="font-bold text-slate-900 uppercase tracking-widest text-xs mb-1">Legal</h4>
+              <a href="/privacy-policy.html" className="text-slate-500 hover:text-brand-800 transition-colors">
+                Privacy Policy
+              </a>
+              <a href="/delete-account.html" className="text-slate-500 hover:text-brand-800 transition-colors">
+                Delete Account
+              </a>
+            </div>
+          </div>
+          
         </div>
       </footer>
     </div>

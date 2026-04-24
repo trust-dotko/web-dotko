@@ -4,6 +4,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
@@ -119,10 +120,13 @@ export function AuthProvider({ children }) {
   // Logout
   const logout = () => signOut(auth);
 
+  // Reset Password
+  const resetPassword = (email) => sendPasswordResetEmail(auth, email);
+
   // Check if profile is complete enough to submit reports
   const isProfileComplete = () => {
     if (!profile) return false;
-    const required = ['gst', 'businessName', 'entityType', 'email'];
+    const required = ['gst', 'businessName', 'entityType'];
     return required.every((key) => profile[key] && String(profile[key]).trim() !== '');
   };
 
@@ -134,6 +138,7 @@ export function AuthProvider({ children }) {
     login,
     signup,
     logout,
+    resetPassword,
     refreshProfile,
     isProfileComplete,
   };

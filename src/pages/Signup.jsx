@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { UserPlus, Loader2, Search, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { isValidGST } from '../data/trustEngine';
 import { verifyGSTIN } from '../config/firebase';
 
 export default function Signup() {
+  const location = useLocation();
   const [step, setStep]         = useState(1); // 1: GST, 2: Account
-  const [gst, setGst]           = useState('');
+  const [gst, setGst]           = useState(location.state?.prefillGst || '');
   const [gstData, setGstData]   = useState(null);
   const [gstError, setGstError] = useState('');
   const [gstLoading, setGstLoading] = useState(false);

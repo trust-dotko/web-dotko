@@ -9,6 +9,7 @@ import Signup from './pages/Signup';
 import EmailVerify from './pages/EmailVerify';
 import ProfileComplete from './pages/ProfileComplete';
 import NotFound from './pages/NotFound';
+import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
   return (
@@ -16,8 +17,8 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/"                 element={<Landing />} />
-          <Route path="/dashboard"        element={<Dashboard />} />
-          <Route path="/report/:gst"      element={<Report />} />
+          <Route path="/dashboard"        element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/report/:gst"      element={<ProtectedRoute><Report /></ProtectedRoute>} />
           <Route path="/login"            element={<Login />} />
           <Route path="/signup"           element={<Signup />} />
           <Route path="/verify-email"     element={<EmailVerify />} />

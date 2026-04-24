@@ -20,7 +20,8 @@ export default function Login() {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, logout, resetPassword } = useAuth();
+  const [resetMessage, setResetMessage] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -28,12 +29,33 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      await login(email, password);
+      const cred = await login(email, password);
+      // Check email verification before allowing access
+      if (!cred.user.emailVerified) {
+        await logout(); // Sign them out immediately
+        setError('Please verify your email address before logging in.');
+        return;
+      }
       navigate('/dashboard');
     } catch (err) {
       setError(friendlyError(err.code));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address to reset your password.');
+      return;
+    }
+    setError('');
+    setResetMessage('');
+    try {
+      await resetPassword(email);
+      setResetMessage('Password reset link sent! Check your inbox.');
+    } catch (err) {
+      setError(err.message || 'Failed to send reset email.');
     }
   };
 
@@ -51,8 +73,22 @@ export default function Login() {
           className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 space-y-4"
         >
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
-              {error}
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex flex-col gap-2">
+              <span>{error}</span>
+              {error.includes('verify your email') && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/verify-email')}
+                  className="font-semibold underline text-left"
+                >
+                  Go to verification page
+                </button>
+              )}
+            </div>
+          )}
+          {resetMessage && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg px-4 py-3">
+              {resetMessage}
             </div>
           )}
 
@@ -70,7 +106,16 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Password</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-slate-600">Password</label>
+              <button 
+                type="button" 
+                onClick={handleForgotPassword}
+                className="text-xs text-brand-800 hover:underline"
+              >
+                Forgot Password?
+              </button>
+            </div>
             <input
               id="login-password"
               type="password"

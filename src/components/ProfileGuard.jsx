@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AlertTriangle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -17,6 +17,7 @@ import { useAuth } from '../contexts/AuthContext';
 export default function ProfileGuard({ children, fallbackMessage = 'Complete your profile to continue.' }) {
   const { user, isProfileComplete, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Still loading auth state
   if (loading) return null;
@@ -47,7 +48,7 @@ export default function ProfileGuard({ children, fallbackMessage = 'Complete you
           Your profile is missing required information. Please complete it to proceed.
         </p>
         <button
-          onClick={() => navigate('/profile/complete')}
+          onClick={() => navigate('/profile/complete', { state: { from: location.pathname } })}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-brand-800 hover:bg-brand-700 px-4 py-2 rounded-lg transition-colors"
         >
           Complete Profile <ArrowRight className="w-3.5 h-3.5" />

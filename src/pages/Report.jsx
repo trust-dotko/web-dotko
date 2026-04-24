@@ -28,8 +28,14 @@ export default function Report() {
       setNotFound(false);
       try {
         // 1. Try Firestore
-        const bizSnap = await getDoc(doc(db, 'companies', gst));
-        if (bizSnap.exists()) {
+        let bizSnap;
+        try {
+          bizSnap = await getDoc(doc(db, 'companies', gst));
+        } catch (e) {
+          console.warn('Firestore read error on companies doc:', e.message);
+        }
+
+        if (bizSnap?.exists()) {
           setBusiness({ gst, ...bizSnap.data() });
         } else {
           // 2. Fall back to GST API data passed via router state
@@ -52,8 +58,14 @@ export default function Report() {
         }
 
         // 3. Load trades subcollection
-        const tradesSnap = await getDocs(collection(db, 'companies', gst, 'trades'));
-        setTrades(tradesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        let tradesSnap;
+        try {
+          tradesSnap = await getDocs(collection(db, 'companies', gst, 'trades'));
+          setTrades(tradesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (e) {
+          console.warn('Firestore read error on trades:', e.message);
+          setTrades([]);
+        }
       } catch (err) {
         console.error('Report load error:', err);
         setNotFound(true);
