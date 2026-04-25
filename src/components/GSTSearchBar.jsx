@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, AlertCircle, Loader2 } from 'lucide-react';
-import { isValidGST } from '../data/trustEngine';
+import { isValidGST, calculateTrustScore } from '../data/trustEngine';
 import { verifyGSTIN, db } from '../config/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
@@ -61,13 +61,21 @@ export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN
           };
           await setDoc(companyRef, businessData, { merge: true });
 
-          // Save to user's recent searches
+          // Calculate real score from businessMeta (no trades yet, but caps apply)
+          const { score } = calculateTrustScore([], {
+            status:           businessData.status,
+            registrationDate: businessData.incorporated,
+          });
+
+          // Save to user's recent searches (include businessMeta so dashboard can recalculate)
           const searchRef = doc(db, 'users', user.uid, 'searches', q);
           await setDoc(searchRef, {
-            gst: q,
-            name: businessData.name,
-            score: 50, // Default base score
-            searchedAt: serverTimestamp()
+            gst:            q,
+            name:           businessData.name,
+            score,
+            gstStatus:      businessData.status       || '',
+            incorporated:   businessData.incorporated || '',
+            searchedAt:     serverTimestamp(),
           }, { merge: true });
         } catch (e) {
           console.warn('Failed to cache search data:', e);

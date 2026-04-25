@@ -9,6 +9,7 @@ import Signup from './pages/Signup';
 import EmailVerify from './pages/EmailVerify';
 import ProfileComplete from './pages/ProfileComplete';
 import NotFound from './pages/NotFound';
+import MyTrades from './pages/MyTrades';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/signup"           element={<Signup />} />
           <Route path="/verify-email"     element={<EmailVerify />} />
           <Route path="/profile/complete" element={<ProfileComplete />} />
+          <Route path="/my-trades"        element={<ProtectedRoute><MyTrades /></ProtectedRoute>} />
           <Route path="*"                 element={<NotFound />} />
         </Routes>
       </AuthProvider>

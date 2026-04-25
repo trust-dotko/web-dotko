@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Clock, Building2, TrendingUp, ChevronRight, Shield, Users, MapPin, CheckCircle, Briefcase } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import GSTSearchBar from '../components/GSTSearchBar';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
-import { getRiskLevel, formatDate } from '../data/trustEngine';
+import { getRiskLevel, formatDate, calculateTrustScore } from '../data/trustEngine';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, getDoc, doc, getCountFromServer } from 'firebase/firestore';
 
 
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, profile }  = useAuth();
-  const [recentSearches, setRecentSearches] = useState([]);
+  const location = useLocation();
+  useEffect(() => {
+    if (location.state?.focusSearch) {
+      document.getElementById('gst-search-input')?.focus();
+    }
+  }, [location.state]);
+  const [recentSearches,     setRecentSearches]     = useState([]);
+  const [submittedTradeCount, setSubmittedTradeCount] = useState(null);
 
   useEffect(() => {
     const loadSearches = async () => {
@@ -27,7 +34,28 @@ export default function Dashboard() {
           limit(10)
         );
         const snap = await getDocs(q);
-        setRecentSearches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // For records missing gstStatus (old cache), fetch company doc in parallel
+        const enriched = await Promise.all(raw.map(async (s) => {
+          let status       = s.gstStatus      || '';
+          let incorporated = s.incorporated   || '';
+
+          if (!status && s.gst) {
+            try {
+              const compSnap = await getDoc(doc(db, 'companies', s.gst));
+              if (compSnap.exists()) {
+                status       = compSnap.data().status      || '';
+                incorporated = compSnap.data().incorporated || '';
+              }
+            } catch { /* best-effort */ }
+          }
+
+          const { score } = calculateTrustScore([], { status, registrationDate: incorporated });
+          return { ...s, score };
+        }));
+
+        setRecentSearches(enriched);
       } catch {
         setRecentSearches([]);
       }
@@ -35,10 +63,16 @@ export default function Dashboard() {
     loadSearches();
   }, [user]);
 
+  useEffect(() => {
+    if (!user) { setSubmittedTradeCount(0); return; }
+    getCountFromServer(collection(db, 'users', user.uid, 'submittedTrades'))
+      .then(snap => setSubmittedTradeCount(snap.data().count))
+      .catch(() => setSubmittedTradeCount(0));
+  }, [user]);
+
   const enriched = recentSearches.map(s => ({
     ...s,
-    score: s.score ?? 50,
-    risk:  getRiskLevel(s.score ?? 50),
+    risk: getRiskLevel(s.score ?? 50),
   }));
 
   return (
@@ -93,9 +127,16 @@ export default function Dashboard() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <StatCard icon={TrendingUp} label="Recent Searches"    value={recentSearches.length.toString()} />
-          <StatCard icon={Shield}     label="Profile Status"     value={profile?.profileComplete !== false ? "Active" : "Pending"} />
-          <StatCard icon={Users}      label="Account Type"       value="User" />
+          <StatCard icon={TrendingUp} label="Recent Searches"   value={recentSearches.length.toString()} />
+          <StatCard icon={Shield}     label="Profile Status"    value={profile?.profileComplete !== false ? "Active" : "Pending"} />
+          <StatCard
+            icon={Briefcase}
+            label="Submitted Trades"
+            value={submittedTradeCount === null ? '…' : submittedTradeCount.toString()}
+            onClick={() => navigate('/my-trades')}
+            className="cursor-pointer hover:border-brand-300 hover:bg-brand-50 transition-colors"
+          />
+          <StatCard icon={Users}      label="Account Type"      value="User" />
         </div>
 
         {/* Recent searches */}

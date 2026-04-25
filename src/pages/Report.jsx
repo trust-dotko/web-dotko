@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, MapPin, Calendar, Briefcase, AlertTriangle, TrendingUp, BadgeCheck, Plus } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, Briefcase, AlertTriangle, TrendingUp, BadgeCheck, Plus, Download } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import ScoreRing from '../components/ScoreRing';
 import TradeTable from '../components/TradeTable';
@@ -9,7 +9,7 @@ import Badge from '../components/Badge';
 import SubmitTradeModal from '../components/SubmitTradeModal';
 import { calculateTrustScore, getRiskLevel, formatCurrency } from '../data/trustEngine';
 import { db } from '../config/firebase';
-import { doc, getDoc, collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 
 export default function Report() {
   const { gst }     = useParams();
@@ -76,7 +76,13 @@ export default function Report() {
     load();
   }, [gst]);
 
-  const score = useMemo(() => calculateTrustScore(trades), [trades]);
+  const { score, factors } = useMemo(
+    () => calculateTrustScore(trades, {
+      status: business?.status,
+      registrationDate: business?.incorporated,
+    }),
+    [trades, business?.status, business?.incorporated]
+  );
   const risk  = useMemo(() => getRiskLevel(score),         [score]);
 
   const paid        = trades.filter(t => t.status === 'Paid').length;
@@ -84,12 +90,40 @@ export default function Report() {
   const unpaid      = trades.filter(t => t.status === 'Unpaid').length;
   const totalVolume = trades.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const handleTradeSubmit = async (newTrade) => {
-    const ref = await addDoc(
-      collection(db, 'companies', gst, 'trades'),
-      { ...newTrade, createdAt: serverTimestamp() }
-    );
-    setTrades(prev => [...prev, { id: ref.id, ...newTrade }]);
+  // Called by SubmitTradeModal after a successful API submission
+  const handleTradeSuccess = (newTrade) => {
+    if (newTrade) {
+      setTrades(prev => [...prev, newTrade]);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const { default: jsPDF }       = await import('jspdf');
+      const { default: html2canvas } = await import('html2canvas');
+
+      const element = document.getElementById('report-main');
+      const canvas  = await html2canvas(element, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgW  = pageW;
+      const imgH  = (canvas.height * pageW) / canvas.width;
+
+      let yPos = 0;
+      while (yPos < imgH) {
+        if (yPos > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, -yPos, imgW, imgH);
+        yPos += pageH;
+      }
+
+      pdf.save(`${gst}-dotko-report.pdf`);
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('Could not generate PDF. Please try again.');
+    }
   };
 
   if (loading) {
@@ -125,11 +159,12 @@ export default function Report() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main id="report-main" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* Back */}
         <button
           onClick={() => navigate(-1)}
+          data-html2canvas-ignore="true"
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-800 transition-colors mb-6"
         >
           <ArrowLeft className="w-4 h-4" /> Back
@@ -145,7 +180,17 @@ export default function Report() {
                   <h1 className="text-2xl font-bold text-slate-900">{business.name}</h1>
                   <p className="font-mono text-sm text-slate-500 mt-0.5">{gst}</p>
                 </div>
-                <Badge label={risk} size="lg" />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownload}
+                    data-html2canvas-ignore="true"
+                    className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-800 border border-slate-200 hover:border-brand-300 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Download</span>
+                  </button>
+                  <Badge label={risk} size="lg" />
+                </div>
               </div>
               <div className="mt-4 grid sm:grid-cols-2 gap-2 text-sm">
                 {(business.city || business.state) && (
@@ -188,6 +233,7 @@ export default function Report() {
             <h2 className="font-semibold text-slate-900">Trade History</h2>
             <button
               id="submit-trade-btn"
+              data-html2canvas-ignore="true"
               onClick={() => setShowModal(true)}
               className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-brand-800 hover:bg-brand-700 px-3 py-1.5 rounded-lg transition-colors"
             >
@@ -204,23 +250,24 @@ export default function Report() {
             <p className="text-sm text-slate-500">No trade history. Score defaults to 50.</p>
           ) : (
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Base score</span>
-                <span className="font-medium">100</span>
-              </div>
-              {unpaid > 0 && (
-                <div className="flex justify-between text-red-600">
-                  <span>Unpaid trades ({unpaid} × −20)</span>
-                  <span>−{unpaid * 20}</span>
-                </div>
-              )}
-              {delayed > 0 && (
-                <div className="flex justify-between text-amber-600">
-                  <span>Delayed trades ({delayed} × −10)</span>
-                  <span>−{delayed * 10}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold border-t border-slate-200 pt-2">
+              {factors.map((f) => {
+                const colorClass =
+                  f.color === 'red'   ? 'text-red-600'   :
+                  f.color === 'amber' ? 'text-amber-600' :
+                  'text-slate-600';
+                const deltaText =
+                  f.delta === null ? 'capped at 30' :
+                  f.delta > 0      ? `+${f.delta}`  :
+                  f.delta < 0      ? `${f.delta}`   :
+                  '—';
+                return (
+                  <div key={f.label} className={`flex justify-between ${colorClass}`}>
+                    <span>{f.label}</span>
+                    <span className="font-medium">{deltaText}</span>
+                  </div>
+                );
+              })}
+              <div className="flex justify-between font-bold border-t border-slate-200 pt-2 text-slate-900">
                 <span>Final Trust Score</span>
                 <span>{score}</span>
               </div>
@@ -235,7 +282,7 @@ export default function Report() {
           gst={gst}
           businessName={business.name}
           onClose={() => setShowModal(false)}
-          onSubmit={handleTradeSubmit}
+          onSuccess={handleTradeSuccess}
         />
       )}
     </div>

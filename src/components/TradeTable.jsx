@@ -1,7 +1,20 @@
 import React from 'react';
 import Badge from './Badge';
-import { formatCurrency } from '../data/trustEngine';
+import { formatCurrency, formatDate } from '../data/trustEngine';
 import { AlertTriangle } from 'lucide-react';
+
+const STATUS_COLORS = {
+  'Paid on Time':        'text-emerald-600',
+  'Paid Late':           'text-amber-600',
+  'Partially Paid':      'text-orange-600',
+  'Default/Written Off': 'text-red-600',
+  'Disputed':            'text-purple-600',
+  'Still Pending':       'text-slate-500',
+  // legacy
+  'Paid':    'text-emerald-600',
+  'Delayed': 'text-amber-600',
+  'Unpaid':  'text-red-600',
+};
 
 export default function TradeTable({ trades }) {
   if (!trades || trades.length === 0) {
@@ -19,7 +32,7 @@ export default function TradeTable({ trades }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200">
-            {['Buyer / Party', 'Trade Amount', 'Credit Days', 'Actual Days', 'Delay', 'Status'].map(h => (
+            {['Party / Business', 'Trade Amount', 'Credit Period', 'Due Date', 'Status'].map(h => (
               <th key={h} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-4 first:pl-0 last:pr-0">
                 {h}
               </th>
@@ -28,22 +41,51 @@ export default function TradeTable({ trades }) {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {trades.map(trade => {
-            const overdue = trade.actualDays - trade.creditDays;
+            // Support both new field names and legacy field names
+            const partyName    = trade.counterpartyName  || trade.buyer            || '—';
+            const amount       = trade.tradeValue        ?? trade.amount           ?? 0;
+            const creditPeriod = trade.creditPeriod      ?? trade.creditDays       ?? null;
+            const dueDate      = trade.paymentDueDate    || null;
+            // For legacy trades: compute delay indicator
+            const legacyOverdue = (trade.actualDays != null && trade.creditDays != null)
+              ? trade.actualDays - trade.creditDays
+              : null;
+
             return (
               <tr key={trade.id} className="hover:bg-slate-50 transition-colors group">
-                <td className="py-3.5 px-4 pl-0 font-medium text-slate-800">{trade.buyer}</td>
-                <td className="py-3.5 px-4 text-slate-700 font-mono text-xs">
-                  {formatCurrency(trade.amount)}
-                </td>
-                <td className="py-3.5 px-4 text-slate-600">{trade.creditDays}d</td>
-                <td className="py-3.5 px-4 text-slate-600">{trade.actualDays}d</td>
-                <td className="py-3.5 px-4">
-                  {overdue > 0 ? (
-                    <span className="text-red-600 font-medium text-xs">+{overdue}d</span>
-                  ) : (
-                    <span className="text-emerald-600 text-xs">On time</span>
+                {/* Party */}
+                <td className="py-3.5 px-4 pl-0">
+                  <p className="font-medium text-slate-800">{partyName}</p>
+                  {trade.counterpartyGSTIN && (
+                    <p className="font-mono text-xs text-slate-400 mt-0.5">{trade.counterpartyGSTIN}</p>
+                  )}
+                  {trade.tradeType && (
+                    <p className="text-xs text-slate-400 mt-0.5">{trade.tradeType}</p>
                   )}
                 </td>
+
+                {/* Amount */}
+                <td className="py-3.5 px-4 text-slate-700 font-mono text-xs">
+                  {amount > 0 ? formatCurrency(amount) : '—'}
+                </td>
+
+                {/* Credit Period */}
+                <td className="py-3.5 px-4 text-slate-600">
+                  {creditPeriod != null ? `${creditPeriod}d` : '—'}
+                </td>
+
+                {/* Due Date */}
+                <td className="py-3.5 px-4 text-slate-600 text-xs">
+                  {dueDate
+                    ? formatDate(dueDate)
+                    : legacyOverdue != null
+                      ? (legacyOverdue > 0
+                          ? <span className="text-red-600 font-medium">+{legacyOverdue}d late</span>
+                          : <span className="text-emerald-600">On time</span>)
+                      : '—'}
+                </td>
+
+                {/* Status */}
                 <td className="py-3.5 px-4 pr-0">
                   <Badge label={trade.status} />
                 </td>

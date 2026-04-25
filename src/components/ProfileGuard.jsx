@@ -15,12 +15,13 @@ import { useAuth } from '../contexts/AuthContext';
  *   </ProfileGuard>
  */
 export default function ProfileGuard({ children, fallbackMessage = 'Complete your profile to continue.' }) {
-  const { user, isProfileComplete, loading } = useAuth();
+  const { user, isProfileComplete, loading, profileLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   // Still loading auth state
   if (loading) return null;
+  if (profileLoading) return null;
 
   // Not logged in → redirect to signup
   if (!user) {

@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => {
     ],
     // Serve branding assets from public/
     publicDir: 'assets',
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: ['./src/test-setup.js'],
+    },
   }
 })
 
@@ -277,6 +282,57 @@ function devApiPlugin(env) {
             return res.end(JSON.stringify({ error: 'userData is required' }))
           }
           return res.end(JSON.stringify({ score: 50, label: 'Caution', description: 'Limited verification', color: '#F59E0B' }))
+        }
+
+        // ---- /api/trade/submit ----
+        if (req.url === '/api/trade/submit' && req.method === 'POST') {
+          const body = req.body || {}
+          const {
+            counterpartyGSTIN, counterpartyName, tradeType, invoiceNumber,
+            tradeValue, creditPeriod, invoiceDate, paymentDueDate, status,
+            submitterGSTIN, submitterName,
+          } = body
+
+          // Basic validation
+          const gstRe = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
+          if (!counterpartyGSTIN || !gstRe.test((counterpartyGSTIN || '').trim().toUpperCase())) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ error: 'Valid GSTIN required' }))
+          }
+          if (!tradeValue || Number(tradeValue) <= 0) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ error: 'tradeValue must be > 0' }))
+          }
+
+          // Decode uid from JWT (no Admin SDK needed in dev)
+          const authHeader = req.headers?.authorization || ''
+          let uid = 'dev-user'
+          try {
+            const tokenStr = authHeader.replace('Bearer ', '')
+            const payload = JSON.parse(Buffer.from(tokenStr.split('.')[1], 'base64').toString())
+            if (payload.user_id) uid = payload.user_id
+          } catch {}
+
+          const tradeId = `dev-trade-${Date.now()}`
+          const trade = {
+            id: tradeId,
+            counterpartyGSTIN: (counterpartyGSTIN || '').trim().toUpperCase(),
+            counterpartyName:  (counterpartyName  || '').trim(),
+            tradeType:         tradeType  || 'Sale',
+            invoiceNumber:     invoiceNumber || '',
+            tradeValue:        Number(tradeValue),
+            creditPeriod:      Number(creditPeriod || 0),
+            invoiceDate:       invoiceDate    || '',
+            paymentDueDate:    paymentDueDate || '',
+            status:            status || 'Still Pending',
+            submittedBy:       uid,
+            submitterGSTIN:    (submitterGSTIN || '').trim().toUpperCase(),
+            submitterName:     (submitterName  || '').trim(),
+            createdAt:         new Date().toISOString(),
+            updatedAt:         new Date().toISOString(),
+          }
+          console.log('[dev-api] Trade submitted:', trade.counterpartyGSTIN, trade.status)
+          return res.end(JSON.stringify({ success: true, tradeId, trade }))
         }
 
         // Unknown API route

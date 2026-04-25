@@ -1,11 +1,23 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, LogOut, LogIn, UserPlus } from 'lucide-react';
+import { Link, useNavigate, useMatch } from 'react-router-dom';
+import { LayoutDashboard, LogOut, LogIn, UserPlus, FileText, Briefcase } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const isReportPage = useMatch('/report/:gst');
+
+  const handleSubmitTrade = () => {
+    if (isReportPage) {
+      // On a report page — click the inline Submit Trade button
+      document.getElementById('submit-trade-btn')?.click();
+    } else {
+      // Anywhere else — go to My Trades page where the modal can be opened
+      navigate('/my-trades', { state: { openModal: true } });
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -37,6 +49,20 @@ export default function Navbar() {
                 <LayoutDashboard className="w-4 h-4" />
                 Dashboard
               </Link>
+              <Link
+                to="/my-trades"
+                className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-800 transition-colors"
+              >
+                <Briefcase className="w-4 h-4" />
+                My Trades
+              </Link>
+              <button
+                onClick={handleSubmitTrade}
+                className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-800 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                Submit Trade
+              </button>
               <button
                 onClick={handleLogout}
                 className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-red-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50"

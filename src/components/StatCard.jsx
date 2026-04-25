@@ -1,14 +1,19 @@
 import React from 'react';
 
-export default function StatCard({ icon: Icon, label, value, sub, accent = false }) {
+export default function StatCard({ icon: Icon, label, value, sub, accent = false, onClick, className = '' }) {
   return (
-    <div className={`
-      rounded-xl border p-4 flex items-start gap-3
-      ${accent
-        ? 'bg-brand-800 border-brand-700 text-white'
-        : 'bg-white border-slate-200 shadow-card hover:shadow-card-hover transition-shadow'
-      }
-    `}>
+    <div
+      onClick={onClick}
+      className={`
+        rounded-xl border p-4 flex items-start gap-3
+        ${accent
+          ? 'bg-brand-800 border-brand-700 text-white'
+          : 'bg-white border-slate-200 shadow-card hover:shadow-card-hover transition-shadow'
+        }
+        ${onClick ? 'cursor-pointer' : ''}
+        ${className}
+      `}
+    >
       {Icon && (
         <div className={`
           w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0

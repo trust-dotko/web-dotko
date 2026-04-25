@@ -12,6 +12,8 @@ const ENTITY_TYPES = [
 
 export default function ProfileComplete() {
   const { user, profile, refreshProfile, loading } = useAuth();
+  const isNameLocked = Boolean(profile?.businessName);
+  const isGstLocked  = Boolean(profile?.gst);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -123,23 +125,31 @@ export default function ProfileComplete() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1.5">Business Name *</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                Business Name *
+                {isNameLocked && <span className="ml-2 text-emerald-600 font-normal">verified</span>}
+              </label>
               <input
                 type="text"
                 value={form.businessName}
                 onChange={e => setForm(f => ({ ...f, businessName: e.target.value }))}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                disabled={isNameLocked}
+                className={`w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${isNameLocked ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
                 placeholder="Your business name"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1.5">GSTIN *</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                GSTIN *
+                {isGstLocked && <span className="ml-2 text-emerald-600 font-normal">verified</span>}
+              </label>
               <input
                 type="text"
                 value={form.gst}
                 onChange={e => setForm(f => ({ ...f, gst: e.target.value.toUpperCase() }))}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                disabled={isGstLocked}
+                className={`w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 ${isGstLocked ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
                 placeholder="15-character GSTIN"
                 maxLength={15}
               />
