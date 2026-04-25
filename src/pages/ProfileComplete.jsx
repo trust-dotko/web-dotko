@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { CheckCircle, Loader2, Building2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { auth } from '../config/firebase';
+import { db } from '../config/firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
 
 const ENTITY_TYPES = [
@@ -51,35 +52,30 @@ export default function ProfileComplete() {
     setError('');
 
     if (!form.businessName.trim()) { setError('Business name is required.'); return; }
-    if (!form.gst.trim()) { setError('GST number is required.'); return; }
-    if (!form.entityType) { setError('Entity type is required.'); return; }
+    if (!form.gst.trim())          { setError('GST number is required.');     return; }
+    if (!form.entityType)          { setError('Entity type is required.');     return; }
 
     setSaving(true);
     try {
-      const token = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/auth/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          businessName: form.businessName.trim(),
-          gst: form.gst.trim().toUpperCase(),
-          entityType: form.entityType,
-          pan: form.pan.trim().toUpperCase(),
-          city: form.city.trim(),
-          state: form.state.trim(),
-          establishmentYear: form.establishmentYear || null,
-          profileComplete: true,
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to save');
-      await refreshProfile();
+      // Write directly to Firestore — no Admin SDK / API needed
+      await setDoc(doc(db, 'users', user.uid), {
+        businessName:      form.businessName.trim(),
+        gst:               form.gst.trim().toUpperCase(),
+        entityType:        form.entityType,
+        pan:               form.pan.trim().toUpperCase(),
+        city:              form.city.trim(),
+        state:             form.state.trim(),
+        establishmentYear: form.establishmentYear || null,
+        profileComplete:   true,
+        updatedAt:         serverTimestamp(),
+      }, { merge: true });
+
+      await refreshProfile(); // re-sync AuthContext from Firestore
       setSuccess(true);
       const destination = location.state?.from || '/dashboard';
       setTimeout(() => navigate(destination, { replace: true }), 1500);
     } catch (err) {
+      console.error('Profile save error:', err);
       setError('Failed to save profile. Please try again.');
     } finally {
       setSaving(false);

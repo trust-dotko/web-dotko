@@ -7,7 +7,8 @@ import {
   sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { auth, db } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 const AuthContext = createContext(null);
 
@@ -22,18 +23,10 @@ export function AuthProvider({ children }) {
       setUser(firebaseUser ?? null);
 
       if (firebaseUser) {
-        // Load profile from our API
+        // Load profile directly from Firestore (no Admin SDK needed)
         try {
-          const token = await firebaseUser.getIdToken();
-          const res = await fetch('/api/auth/profile', {
-            headers: { 'Authorization': `Bearer ${token}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setProfile(data.profile || null);
-          } else {
-            setProfile(null);
-          }
+          const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+          setProfile(snap.exists() ? snap.data() : null);
         } catch {
           setProfile(null);
         }
@@ -45,21 +38,17 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  // Refresh profile
+  // Refresh profile directly from Firestore
   const refreshProfile = async () => {
     if (!user) return null;
     try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/auth/profile', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProfile(data.profile || null);
-        return data.profile;
-      }
-    } catch {}
-    return null;
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      const profileData = snap.exists() ? snap.data() : null;
+      setProfile(profileData);
+      return profileData;
+    } catch {
+      return null;
+    }
   };
 
   // Login
