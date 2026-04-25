@@ -11,7 +11,8 @@ const ENTITY_TYPES = [
 ];
 
 export default function ProfileComplete() {
-  const { user, profile, refreshProfile, loading } = useAuth();
+  const { user, profile, refreshProfile, loading, profileLoading } = useAuth();
+  // Locked once data exists — persists across renders because profile only grows, never shrinks
   const isNameLocked = Boolean(profile?.businessName);
   const isGstLocked  = Boolean(profile?.gst);
   const navigate = useNavigate();
@@ -85,7 +86,10 @@ export default function ProfileComplete() {
     }
   };
 
-  if (loading) {
+  // Wait for both auth AND profile to load before rendering the form.
+  // Without this, isNameLocked / isGstLocked are false during the flash,
+  // the user sees editable fields, and the lock never activates.
+  if (loading || profileLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand-800 animate-spin" />
