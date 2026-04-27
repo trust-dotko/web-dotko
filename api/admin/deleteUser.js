@@ -8,9 +8,21 @@ if (!getApps().length) {
     // Requires FIREBASE_SERVICE_ACCOUNT_KEY in Vercel environment variables.
     // Or if running locally, rely on GOOGLE_APPLICATION_CREDENTIALS.
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      initializeApp({
-        credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)),
-      });
+      let serviceAccount;
+      try {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      } catch (parseError) {
+        console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', parseError);
+      }
+
+      if (serviceAccount && serviceAccount.project_id) {
+        initializeApp({
+          credential: cert(serviceAccount),
+        });
+      } else {
+        // Fallback for default initialization (e.g., local or Google Cloud envs)
+        initializeApp();
+      }
     } else {
       // Fallback for default initialization (e.g., local or Google Cloud envs)
       initializeApp();
@@ -29,11 +41,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // CORS headers for admin portal
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
+  // CORS handled by vercel.json
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }

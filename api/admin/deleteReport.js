@@ -6,9 +6,21 @@ import { getAuth } from 'firebase-admin/auth';
 if (!getApps().length) {
   try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      initializeApp({
-        credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)),
-      });
+      let serviceAccount;
+      try {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      } catch (parseError) {
+        console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', parseError);
+        // If it's already a valid path or we're in GCP, initializeApp() might still work
+      }
+
+      if (serviceAccount && serviceAccount.project_id) {
+        initializeApp({
+          credential: cert(serviceAccount),
+        });
+      } else {
+        initializeApp();
+      }
     } else {
       initializeApp();
     }
@@ -26,11 +38,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // CORS headers for admin portal
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
+  // CORS handled by vercel.json
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
