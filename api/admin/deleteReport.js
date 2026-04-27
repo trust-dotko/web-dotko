@@ -1,19 +1,24 @@
-const admin = require('firebase-admin');
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 // Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
+if (!getApps().length) {
   try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      admin.initializeApp({
-        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)),
+      initializeApp({
+        credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)),
       });
     } else {
-      admin.initializeApp();
+      initializeApp();
     }
   } catch (error) {
     console.error('Firebase admin initialization error:', error);
   }
 }
+
+const db = getFirestore();
+const auth = getAuth();
 
 export default async function handler(req, res) {
   // Only allow POST
@@ -39,7 +44,7 @@ export default async function handler(req, res) {
     const idToken = authHeader.split('Bearer ')[1];
     
     // Verify token
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken = await auth.verifyIdToken(idToken);
     
     // Check if caller is an admin
     if (decodedToken.admin !== true && decodedToken.role !== 'admin') {
@@ -53,7 +58,7 @@ export default async function handler(req, res) {
     }
 
     // Delete from Firestore (bypassing rules)
-    await admin.firestore().collection('reports').doc(reportId).delete();
+    await db.collection('reports').doc(reportId).delete();
 
     return res.status(200).json({ success: true, message: 'Report deleted successfully' });
   } catch (err) {
