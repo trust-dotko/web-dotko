@@ -5,23 +5,15 @@ import { getAuth } from 'firebase-admin/auth';
 // Initialize Firebase Admin if not already initialized
 if (!getApps().length) {
   try {
-    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      let serviceAccount;
-      try {
-        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-      } catch (parseError) {
-        console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', parseError);
-        // If it's already a valid path or we're in GCP, initializeApp() might still work
-      }
+    const projectId   = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    // Vercel escapes newlines in env vars — restore them
+    const privateKey  = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
-      if (serviceAccount && serviceAccount.project_id) {
-        initializeApp({
-          credential: cert(serviceAccount),
-        });
-      } else {
-        initializeApp();
-      }
+    if (projectId && clientEmail && privateKey) {
+      initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
     } else {
+      // Fallback for Google Cloud environments (e.g. Cloud Run)
       initializeApp();
     }
   } catch (error) {
@@ -33,14 +25,14 @@ const db = getFirestore();
 const auth = getAuth();
 
 export default async function handler(req, res) {
+  // CORS preflight — must be checked before the method guard
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
-  }
-
-  // CORS handled by vercel.json
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
   }
 
   try {
