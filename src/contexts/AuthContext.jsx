@@ -86,6 +86,8 @@ export function AuthProvider({ children }) {
         address:          gstData.principalAddress?.fullAddress || '',
         createdAt:        serverTimestamp(),
         updatedAt:        serverTimestamp(),
+        profileComplete:  Boolean(gstData.gstin),
+        onboardingCompleted: Boolean(gstData.gstin),
       };
       await setDoc(doc(db, 'users', cred.user.uid), profileData, { merge: true });
       setProfile(profileData);
@@ -131,7 +133,9 @@ export function AuthProvider({ children }) {
   // Check if profile is complete enough to submit reports
   const isProfileComplete = () => {
     if (!profile) return false;
-    const required = ['gst', 'businessName', 'entityType'];
+    // GST and businessName are the critical ones for reporting.
+    // Entity type is good to have, but shouldn't block reporting if they've verified GST.
+    const required = ['gst', 'businessName'];
     return required.every((key) => profile[key] && String(profile[key]).trim() !== '');
   };
 

@@ -67,6 +67,7 @@ export default function ProfileComplete() {
         state:             form.state.trim(),
         establishmentYear: form.establishmentYear || null,
         profileComplete:   true,
+        onboardingCompleted: true,
         updatedAt:         serverTimestamp(),
       };
       // CREATE rule requires email + createdAt; UPDATE rule does not

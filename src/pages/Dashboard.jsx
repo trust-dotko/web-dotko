@@ -82,10 +82,18 @@ export default function Dashboard() {
 
         {/* Search */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 mb-6">
-          <h2 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-brand-800" /> GST Search
-          </h2>
-          <GSTSearchBar placeholder="Search any GSTIN…" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+            <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-brand-800" /> GST Search
+            </h2>
+            <button
+              onClick={() => navigate('/report/new')} // We can make a generic report page or focus search
+              className="inline-flex items-center gap-2 text-sm font-semibold text-white bg-brand-800 hover:bg-brand-700 px-4 py-2 rounded-lg transition-colors"
+            >
+              <TrendingUp className="w-4 h-4" /> Submit Trade Report
+            </button>
+          </div>
+          <GSTSearchBar placeholder="Search any GSTIN to view report or submit trade…" />
         </div>
 
         {/* User's Business Profile */}

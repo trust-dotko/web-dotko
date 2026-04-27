@@ -314,11 +314,19 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
            customerName: tradePayload.counterpartyName,
            customerGSTIN: tradePayload.counterpartyGSTIN,
            supplierBusinessName: tradePayload.submitterName,
+           supplierId: user.uid,
            amount: tradePayload.tradeValue,
            invoiceNumber: tradePayload.invoiceNumber,
            status: mapTradeStatusToReportStatus(tradePayload.status),
            typeOfComplaint: mapTradeTypeToComplaintType(tradePayload.tradeType),
-           createdAt: new Date().toISOString(),
+           ratings: {
+            overall: 5,
+            paymentTimeliness: 5,
+            communication: 5,
+            contractFulfilment: 5
+           },
+           createdAt: serverTimestamp(),
+           updatedAt: serverTimestamp(),
            // Note: customerEmail, customerWhatsapp, whatsappMessageSent, and whatsappMessageSentAt
            // are not available in the trade submission flow, so they're omitted
          };

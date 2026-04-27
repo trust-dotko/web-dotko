@@ -168,12 +168,12 @@ export function isValidGST(gst = '') {
  */
 export function mapTradeStatusToReportStatus(tradeStatus) {
   const statusMap = {
-    'Paid on Time': 'resolved',
-    'Paid Late': 'resolved',
-    'Partially Paid': 'under_discussion',
+    'Paid on Time':      'resolved',
+    'Paid Late':         'resolved',
+    'Partially Paid':    'under_discussion',
     'Default/Written Off': 'published',
-    'Disputed': 'published',
-    'Still Pending': 'pending'
+    'Disputed':          'published',
+    'Still Pending':     'pending'
   };
   return statusMap[tradeStatus] || 'pending';
 }
@@ -185,10 +185,10 @@ export function mapTradeStatusToReportStatus(tradeStatus) {
  */
 export function mapTradeTypeToComplaintType(tradeType) {
   const typeMap = {
-    'Sale': 'Payment Issue',
-    'Purchase': 'Payment Issue',
-    'Service Provided': 'Service Issue',
-    'Service Received': 'Service Issue'
+    'Sale':             'Payment Issue',
+    'Purchase':         'Payment Issue',
+    'Service Provided':  'Service Issue',
+    'Service Received':  'Service Issue'
   };
   return typeMap[tradeType] || 'Payment Issue';
 }
