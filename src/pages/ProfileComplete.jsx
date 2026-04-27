@@ -57,8 +57,8 @@ export default function ProfileComplete() {
 
     setSaving(true);
     try {
-      // Write directly to Firestore — no Admin SDK / API needed
-      await setDoc(doc(db, 'users', user.uid), {
+      const isNewDoc = !profile; // no Firestore doc yet → hits CREATE rule
+      const payload = {
         businessName:      form.businessName.trim(),
         gst:               form.gst.trim().toUpperCase(),
         entityType:        form.entityType,
@@ -68,7 +68,14 @@ export default function ProfileComplete() {
         establishmentYear: form.establishmentYear || null,
         profileComplete:   true,
         updatedAt:         serverTimestamp(),
-      }, { merge: true });
+      };
+      // CREATE rule requires email + createdAt; UPDATE rule does not
+      if (isNewDoc) {
+        payload.email     = user.email;
+        payload.createdAt = serverTimestamp();
+      }
+      // Write directly to Firestore — no Admin SDK / API needed
+      await setDoc(doc(db, 'users', user.uid), payload, { merge: true });
 
       await refreshProfile(); // re-sync AuthContext from Firestore
       setSuccess(true);
