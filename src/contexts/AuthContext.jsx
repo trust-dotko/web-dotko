@@ -8,7 +8,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { auth, db } from '../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const AuthContext = createContext(null);
 
@@ -55,9 +55,9 @@ export function AuthProvider({ children }) {
   const login = (email, password) =>
     signInWithEmailAndPassword(auth, email, password);
 
-  // Signup — creates auth user, then saves profile via API
+  // Signup — creates auth user + writes profile directly to Firestore
   const signup = async (email, password, gstData = {}) => {
-    // 1. Create Firebase Auth user (client-side — this is how Firebase Auth works)
+    // 1. Create Firebase Auth user
     const cred = await createUserWithEmailAndPassword(auth, email, password);
 
     // 2. Send verification email
@@ -67,40 +67,56 @@ export function AuthProvider({ children }) {
       console.warn('Email verification send failed:', e.message);
     }
 
-    // 3. Save profile via our API (not direct Firestore)
+    // 3. Write profile directly to Firestore (works in both dev and prod,
+    //    no Admin SDK required). This ensures ProfileComplete always has
+    //    pre-filled, locked data from the GST verification step.
+    const businessName = gstData.tradeName || gstData.legalName || '';
+    try {
+      const profileData = {
+        email,
+        businessName,
+        legalName:        gstData.legalName || '',
+        tradeName:        gstData.tradeName || '',
+        gst:              gstData.gstin || '',
+        entityType:       gstData.constitutionOfBusiness || '',
+        gstStatus:        gstData.status || '',
+        registrationDate: gstData.registrationDate || '',
+        state:            gstData.principalAddress?.state || '',
+        city:             gstData.principalAddress?.district || '',
+        address:          gstData.principalAddress?.fullAddress || '',
+        createdAt:        serverTimestamp(),
+        updatedAt:        serverTimestamp(),
+      };
+      await setDoc(doc(db, 'users', cred.user.uid), profileData, { merge: true });
+      setProfile(profileData);
+    } catch (e) {
+      console.warn('Direct Firestore profile write failed:', e.message);
+      // Profile can be completed later via /profile/complete
+    }
+
+    // 4. Also call the API for any server-side work (best-effort; failures are non-fatal)
     try {
       const token = await cred.user.getIdToken();
-      const res = await fetch('/api/auth/register', {
+      await fetch('/api/auth/register', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           email,
           gst: gstData.gstin || '',
-          businessName: gstData.tradeName || gstData.legalName || '',
-          legalName: gstData.legalName || '',
-          tradeName: gstData.tradeName || '',
-          entityType: gstData.constitutionOfBusiness || '',
-          gstStatus: gstData.status || '',
+          businessName,
+          legalName:        gstData.legalName || '',
+          tradeName:        gstData.tradeName || '',
+          entityType:       gstData.constitutionOfBusiness || '',
+          gstStatus:        gstData.status || '',
           registrationDate: gstData.registrationDate || '',
-          address: gstData.principalAddress?.fullAddress || '',
-          state: gstData.principalAddress?.state || '',
-          city: gstData.principalAddress?.district || '',
+          address:          gstData.principalAddress?.fullAddress || '',
+          state:            gstData.principalAddress?.state || '',
+          city:             gstData.principalAddress?.district || '',
           natureOfBusiness: gstData.natureOfBusinessActivities || [],
         }),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setProfile(data.profile || null);
-      } else {
-        console.warn('Profile creation via API failed, user can complete later');
-      }
     } catch (e) {
-      console.warn('Profile API call failed:', e.message);
-      // Auth user is created — profile can be completed later via /profile/complete
+      console.warn('Register API call failed (non-fatal):', e.message);
     }
 
     return cred;
