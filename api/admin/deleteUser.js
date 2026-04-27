@@ -58,12 +58,22 @@ export default async function handler(req, res) {
     }
 
     // 1. Delete from Firebase Authentication
-    await auth.deleteUser(targetUid);
+    let authDeleted = false;
+    try {
+      await auth.deleteUser(targetUid);
+      authDeleted = true;
+    } catch (authErr) {
+      // User may not exist in Auth (already deleted), continue to Firestore cleanup
+      if (authErr.code !== 'auth/user-not-found') throw authErr;
+    }
 
     // 2. Delete from Firestore (bypassing rules)
     await db.collection('users').doc(targetUid).delete();
 
-    return res.status(200).json({ success: true, message: 'User completely deleted' });
+    return res.status(200).json({
+      success: true,
+      message: authDeleted ? 'User completely deleted' : 'Firestore record deleted (Auth user not found)'
+    });
   } catch (err) {
     console.error('Delete user error:', err);
     return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
