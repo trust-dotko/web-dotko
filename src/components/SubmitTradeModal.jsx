@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, CheckCircle2, Loader2, Search, Lock, Upload, FileText, Image, Trash2, Paperclip } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ProfileGuard from './ProfileGuard';
-import { TRADE_STATUSES, isValidGST } from '../data/trustEngine';
+import { TRADE_STATUSES, isValidGST, mapTradeStatusToReportStatus, mapTradeTypeToComplaintType } from '../data/trustEngine';
 import { db, storage } from '../config/firebase';
 import {
   collection, addDoc, doc, setDoc, serverTimestamp,
@@ -299,14 +299,35 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
         { ...tradePayload, companyTradeId: tradeRef.id }
       );
 
-      // 5. Fire-and-forget notification
-      user.getIdToken().then(token =>
-        fetch('/api/trade/submit', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body:    JSON.stringify({ ...tradePayload, tradeId: tradeRef.id }),
-        })
-      ).catch(() => {});
+       // 5. Fire-and-forget notification
+       user.getIdToken().then(token =>
+         fetch('/api/trade/submit', {
+           method:  'POST',
+           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+           body:    JSON.stringify({ ...tradePayload, tradeId: tradeRef.id }),
+         })
+       ).catch(() => {});
+       
+       // 6. Double-write to top-level /reports/ collection for admin portal visibility
+       try {
+         const reportPayload = {
+           customerName: tradePayload.counterpartyName,
+           customerGSTIN: tradePayload.counterpartyGSTIN,
+           supplierBusinessName: tradePayload.submitterName,
+           amount: tradePayload.tradeValue,
+           invoiceNumber: tradePayload.invoiceNumber,
+           status: mapTradeStatusToReportStatus(tradePayload.status),
+           typeOfComplaint: mapTradeTypeToComplaintType(tradePayload.tradeType),
+           createdAt: new Date().toISOString(),
+           // Note: customerEmail, customerWhatsapp, whatsappMessageSent, and whatsappMessageSentAt
+           // are not available in the trade submission flow, so they're omitted
+         };
+         
+         await addDoc(collection(db, 'reports'), reportPayload);
+       } catch (reportError) {
+         console.warn('Failed to write report to top-level collection:', reportError);
+         // Non-fatal - the trade is still recorded in the company subcollection
+       }
 
       setSuccess(true);
       setTimeout(() => {
