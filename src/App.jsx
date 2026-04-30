@@ -21,7 +21,7 @@ export default function App() {
           <Route path="/report/:gst"      element={<ProtectedRoute><Report /></ProtectedRoute>} />
           <Route path="/login"            element={<Login />} />
           <Route path="/signup"           element={<Signup />} />
-          <Route path="/profile/complete" element={<ProfileComplete />} />
+          <Route path="/profile/complete" element={<ProtectedRoute><ProfileComplete /></ProtectedRoute>} />
           <Route path="/my-trades"        element={<ProtectedRoute><MyTrades /></ProtectedRoute>} />
           <Route path="*"                 element={<NotFound />} />
         </Routes>
