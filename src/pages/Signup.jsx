@@ -14,7 +14,6 @@ export default function Signup() {
   const [gstLoading, setGstLoading] = useState(false);
 
   // Step 2 — OTP state
-  const [phone, setPhone]             = useState('');
   const [gstUsername, setGstUsername] = useState('');
   const [otp, setOtp]                 = useState('');
   const [otpSent, setOtpSent]         = useState(false);
@@ -58,11 +57,6 @@ export default function Signup() {
 
   // Step 2 — Send OTP
   const handleSendOTP = async () => {
-    const cleanPhone = phone.trim().replace(/\D/g, '');
-    if (cleanPhone.length !== 10) {
-      setOtpError('Enter a valid 10-digit mobile number');
-      return;
-    }
     if (!gstUsername.trim()) {
       setOtpError('Enter your GST portal username');
       return;
@@ -73,7 +67,7 @@ export default function Signup() {
       const res = await fetch('/api/gst-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gstin: gst.trim().toUpperCase(), username: gstUsername.trim(), phone: cleanPhone }),
+        body: JSON.stringify({ gstin: gst.trim().toUpperCase(), username: gstUsername.trim() }),
       });
       const data = await res.json();
       if (data.success) {
@@ -106,7 +100,6 @@ export default function Signup() {
           username: gstUsername.trim(),
           otp,
           refId,
-          phone: phone.trim().replace(/\D/g, ''),
         }),
       });
       const data = await res.json();
@@ -138,7 +131,7 @@ export default function Signup() {
     setError('');
 
     if (!otpVerified) {
-      setError('Phone verification is required. Please go back and verify your phone.');
+      setError('GST verification is required. Please go back and verify your GST.');
       return;
     }
     if (!email || !password || !confirm) {
@@ -156,7 +149,7 @@ export default function Signup() {
 
     setLoading(true);
     try {
-      await signup(email, password, gstData, phone.trim().replace(/\D/g, ''));
+      await signup(email, password, gstData);
       navigate('/dashboard');
     } catch (err) {
       const code = err.code;
@@ -292,42 +285,23 @@ export default function Signup() {
                 <p className="text-xs text-slate-400 mt-1">Used to send OTP to your GST-registered mobile</p>
               </div>
 
-              {/* Phone input */}
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Mobile Number
-                </label>
-                <div className="flex gap-2">
-                  <div className="flex items-center px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-500 select-none">
-                    +91
-                  </div>
-                  <input
-                    id="signup-phone"
-                    type="tel"
-                    value={phone}
-                    onChange={e => { setPhone(e.target.value); setOtpError(''); }}
-                    placeholder="10-digit mobile number"
-                    className="flex-1 px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    maxLength={10}
-                    disabled={otpSent}
-                    onKeyDown={e => e.key === 'Enter' && !otpSent && handleSendOTP()}
-                  />
-                  {!otpSent && (
-                    <button
-                      id="signup-send-otp"
-                      onClick={handleSendOTP}
-                      disabled={otpLoading}
-                      className="bg-brand-800 text-white font-medium px-4 py-2.5 rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 disabled:opacity-60 whitespace-nowrap"
-                    >
-                      {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
-                      Send OTP
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400 mt-1.5">
-                  OTP will be sent to the mobile number registered with your GST.
+              {/* Send OTP button */}
+              {!otpSent && (
+                <button
+                  id="signup-send-otp"
+                  onClick={handleSendOTP}
+                  disabled={otpLoading}
+                  className="w-full bg-brand-800 text-white font-medium px-4 py-2.5 rounded-lg hover:bg-brand-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" />}
+                  Send OTP to GST-Registered Mobile
+                </button>
+              )}
+              {!otpSent && (
+                <p className="text-xs text-slate-400 text-center -mt-2">
+                  OTP is sent by the government directly to the mobile number registered with your GSTIN.
                 </p>
-              </div>
+              )}
 
               {/* OTP input — shown after OTP is sent */}
               {otpSent && (

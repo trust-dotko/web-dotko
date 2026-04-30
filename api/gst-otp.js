@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ success: false, error: 'Too many requests. Please try again later.' });
   }
 
-  const { gstin, username, phone } = req.body || {};
+  const { gstin, username } = req.body || {};
 
   if (!gstin || typeof gstin !== 'string') {
     return res.status(400).json({ success: false, error: 'GSTIN is required' });
@@ -148,14 +148,15 @@ export default async function handler(req, res) {
     });
 
     const data = await apiRes.json();
+    const innerError = data.data?.error;
 
-    if (data.code === 200) {
-      return res.status(200).json({ success: true, refId: data.data?.ref_id });
+    if (data.code === 200 && !innerError) {
+      return res.status(200).json({ success: true, refId: data.data?.ref_id || '' });
     }
 
     return res.status(502).json({
       success: false,
-      error: data.message || 'OTP generation failed',
+      error: innerError?.message || data.message || 'OTP generation failed',
     });
   } catch (err) {
     console.error('GST OTP error:', err);

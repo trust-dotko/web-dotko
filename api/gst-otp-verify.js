@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     return res.status(429).json({ success: false, error: 'Too many requests. Please try again later.' });
   }
 
-  const { gstin, username, otp, phone } = req.body || {};
+  const { gstin, username, otp } = req.body || {};
 
   if (!gstin || typeof gstin !== 'string') {
     return res.status(400).json({ success: false, error: 'GSTIN is required' });
@@ -112,22 +112,6 @@ export default async function handler(req, res) {
   }
 
   const clean = gstin.trim().toUpperCase();
-
-  // Check Firestore: reject if phone already registered
-  if (phone) {
-    try {
-      const snapshot = await db.collection('users').where('mobileNumber', '==', phone).limit(1).get();
-      if (!snapshot.empty) {
-        return res.status(409).json({
-          success: false,
-          error: 'Phone number already registered. Please sign in.',
-        });
-      }
-    } catch (err) {
-      console.error('Firestore phone check error:', err);
-      return res.status(500).json({ success: false, error: 'Database check failed' });
-    }
-  }
 
   try {
     const token = await authenticate();

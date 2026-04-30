@@ -359,9 +359,11 @@ function devApiPlugin(env) {
               body: JSON.stringify({ gstin: clean, username: username.trim() }),
             })
             const data = await apiRes.json()
-            console.log('[dev-api] OTP generate response:', data.code, data.message)
-            if (data.code === 200) return res.end(JSON.stringify({ success: true, refId: data.data?.ref_id || 'dev-ref' }))
-            return res.end(JSON.stringify({ success: false, error: data.message || 'OTP generation failed' }))
+            const innerError = data.data?.error
+            console.log('[dev-api] OTP generate response:', data.code, innerError?.error_cd || data.message)
+            if (data.code === 200 && !innerError) return res.end(JSON.stringify({ success: true, refId: data.data?.ref_id || '' }))
+            const errMsg = innerError?.message || data.message || 'OTP generation failed'
+            return res.end(JSON.stringify({ success: false, error: errMsg }))
           } catch (err) {
             console.warn('[dev-api] OTP generate error:', err.message, '— returning mock success')
             return res.end(JSON.stringify({ success: true, refId: 'dev-mock-ref' }))

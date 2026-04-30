@@ -32,7 +32,7 @@ export default function TradeTable({ trades }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200">
-            {['Party / Business', 'Trade Amount', 'Credit Period', 'Due Date', 'Status'].map(h => (
+            {['Reported By', 'Trade Amount', 'Credit Period', 'Due Date', 'Status'].map(h => (
               <th key={h} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-4 first:pl-0 last:pr-0">
                 {h}
               </th>
@@ -41,8 +41,9 @@ export default function TradeTable({ trades }) {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {trades.map(trade => {
-            // Support both new field names and legacy field names
-            const partyName    = trade.counterpartyName  || trade.buyer            || '—';
+            // submitterName = who filed the report; shown on the counterparty's report page
+            const partyName    = trade.submitterName     || trade.buyer            || '—';
+            const partyGSTIN   = trade.submitterGSTIN    || null;
             const amount       = trade.tradeValue        ?? trade.amount           ?? 0;
             const creditPeriod = trade.creditPeriod      ?? trade.creditDays       ?? null;
             const dueDate      = trade.paymentDueDate    || null;
@@ -58,11 +59,11 @@ export default function TradeTable({ trades }) {
                 key={trade.id}
                 className={`hover:bg-slate-50 transition-colors group ${isDefaulted ? 'border-l-4 border-l-red-500 bg-red-50/40' : ''}`}
               >
-                {/* Party */}
+                {/* Party — who submitted this trade report */}
                 <td className="py-3.5 px-4 pl-0">
                   <p className="font-medium text-slate-800">{partyName}</p>
-                  {trade.counterpartyGSTIN && (
-                    <p className="font-mono text-xs text-slate-400 mt-0.5">{trade.counterpartyGSTIN}</p>
+                  {partyGSTIN && (
+                    <p className="font-mono text-xs text-slate-400 mt-0.5">{partyGSTIN}</p>
                   )}
                   {trade.tradeType && (
                     <p className="text-xs text-slate-400 mt-0.5">{trade.tradeType}</p>
