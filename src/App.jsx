@@ -6,7 +6,6 @@ import Dashboard from './pages/Dashboard';
 import Report from './pages/Report';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import EmailVerify from './pages/EmailVerify';
 import ProfileComplete from './pages/ProfileComplete';
 import NotFound from './pages/NotFound';
 import MyTrades from './pages/MyTrades';
@@ -22,7 +21,6 @@ export default function App() {
           <Route path="/report/:gst"      element={<ProtectedRoute><Report /></ProtectedRoute>} />
           <Route path="/login"            element={<Login />} />
           <Route path="/signup"           element={<Signup />} />
-          <Route path="/verify-email"     element={<EmailVerify />} />
           <Route path="/profile/complete" element={<ProfileComplete />} />
           <Route path="/my-trades"        element={<ProtectedRoute><MyTrades /></ProtectedRoute>} />
           <Route path="*"                 element={<NotFound />} />

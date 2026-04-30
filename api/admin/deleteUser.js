@@ -67,12 +67,23 @@ export default async function handler(req, res) {
       if (authErr.code !== 'auth/user-not-found') throw authErr;
     }
 
-    // 2. Delete from Firestore (bypassing rules)
+    // 2. Delete subcollections before deleting the parent doc
+    const subcollections = ['submittedTrades', 'searches'];
+    for (const sub of subcollections) {
+      const subSnap = await db.collection('users').doc(targetUid).collection(sub).get();
+      if (!subSnap.empty) {
+        const batch = db.batch();
+        subSnap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+
+    // 3. Delete the user Firestore doc (bypassing rules)
     await db.collection('users').doc(targetUid).delete();
 
     return res.status(200).json({
       success: true,
-      message: authDeleted ? 'User completely deleted' : 'Firestore record deleted (Auth user not found)'
+      message: authDeleted ? 'User completely deleted' : 'Firestore record deleted (Auth user not found)',
     });
   } catch (err) {
     console.error('Delete user error:', err);

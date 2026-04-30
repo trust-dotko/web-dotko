@@ -16,10 +16,16 @@ export const TRADE_STATUSES = [
  * -------------------
  * @param {Array} trades
  * @param {{ status?: string, registrationDate?: string }} businessMeta
- * @returns {{ score: number, factors: Array<{ label: string, delta: number|null, color: string }> }}
+ * @returns {{ score: number|null, factors: Array<{ label: string, delta: number|null, color: string }> }}
  */
 export function calculateTrustScore(trades = [], businessMeta = {}) {
   businessMeta = businessMeta ?? {};
+
+  // Inactive / Cancelled GST — not scored
+  const inactiveStatuses = ['Cancelled', 'Inactive'];
+  if (inactiveStatuses.includes(businessMeta.status)) {
+    return { score: null, factors: [{ label: `GST Status: ${businessMeta.status} — Not Scored`, delta: null, color: 'red' }] };
+  }
 
   const hasTrades = Array.isArray(trades) && trades.length > 0;
 
@@ -51,37 +57,38 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
       factors.push({ label: `Late payments (${late} × −5)`, delta, color: 'amber' });
     }
 
-    // --- New lifecycle statuses ---
+    // --- New lifecycle statuses (proportional/weighted deductions) ---
     const defaulted  = trades.filter(t => t.status === 'Default/Written Off').length;
     const paidLate   = trades.filter(t => t.status === 'Paid Late').length;
     const partial    = trades.filter(t => t.status === 'Partially Paid').length;
     const disputed   = trades.filter(t => t.status === 'Disputed').length;
     const pending    = trades.filter(t => t.status === 'Still Pending').length;
+    const totalTrades = trades.length;
 
     if (defaulted > 0) {
-      const delta = -(defaulted * 30);
+      const delta = -Math.round(0.5 * (defaulted / totalTrades) * 100);
       score += delta;
-      factors.push({ label: `Default/Written Off (${defaulted} × −30)`, delta, color: 'red' });
+      factors.push({ label: `Default/Written Off (${defaulted}/${totalTrades} trades)`, delta, color: 'red' });
     }
     if (partial > 0) {
-      const delta = -(partial * 15);
+      const delta = -Math.round(0.25 * (partial / totalTrades) * 100);
       score += delta;
-      factors.push({ label: `Partially Paid (${partial} × −15)`, delta, color: 'red' });
+      factors.push({ label: `Partially Paid (${partial}/${totalTrades} trades)`, delta, color: 'red' });
     }
     if (disputed > 0) {
-      const delta = -(disputed * 10);
+      const delta = -Math.round(0.15 * (disputed / totalTrades) * 100);
       score += delta;
-      factors.push({ label: `Disputed trades (${disputed} × −10)`, delta, color: 'amber' });
+      factors.push({ label: `Disputed trades (${disputed}/${totalTrades} trades)`, delta, color: 'amber' });
     }
     if (paidLate > 0) {
-      const delta = -(paidLate * 5);
+      const delta = -Math.round(0.10 * (paidLate / totalTrades) * 100);
       score += delta;
-      factors.push({ label: `Paid Late (${paidLate} × −5)`, delta, color: 'amber' });
+      factors.push({ label: `Paid Late (${paidLate}/${totalTrades} trades)`, delta, color: 'amber' });
     }
     if (pending > 0) {
-      const delta = -(pending * 5);
+      const delta = -Math.round(0.10 * (pending / totalTrades) * 100);
       score += delta;
-      factors.push({ label: `Still Pending (${pending} × −5)`, delta, color: 'amber' });
+      factors.push({ label: `Still Pending (${pending}/${totalTrades} trades)`, delta, color: 'amber' });
     }
   } else {
     // No trade history — neutral base, businessMeta checks still apply
@@ -97,18 +104,6 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
       score -= 20;
       factors.push({ label: 'New Business (< 30 days)', delta: -20, color: 'amber' });
     }
-  }
-
-  // GST Cancelled / Inactive cap — always evaluated
-  const cappedStatuses = ['Cancelled', 'Inactive'];
-  if (cappedStatuses.includes(businessMeta.status)) {
-    const capActive = score > 30;
-    factors.push({
-      label: `GST Status: ${businessMeta.status}`,
-      delta: capActive ? null : 0, // null → "capped at 30"; 0 → already below, no extra reduction
-      color: 'red',
-    });
-    score = Math.min(score, 30);
   }
 
   return { score: Math.max(0, Math.min(100, score)), factors };

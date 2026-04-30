@@ -3,11 +3,12 @@ import { getScoreColor, getRiskLevel } from '../data/trustEngine';
 import Badge from './Badge';
 
 export default function ScoreRing({ score }) {
-  const risk   = getRiskLevel(score);
-  const color  = getScoreColor(score);
+  const isNA   = score === null;
+  const risk   = isNA ? null : getRiskLevel(score);
+  const color  = isNA ? '#94a3b8' : getScoreColor(score); // slate-400 for N/A
   const radius = 54;
   const circ   = 2 * Math.PI * radius;
-  const dash   = circ - (score / 100) * circ;
+  const dash   = isNA ? circ : circ - (score / 100) * circ;
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -20,26 +21,40 @@ export default function ScoreRing({ score }) {
             stroke="#e2e8f0"
             strokeWidth="10"
           />
-          {/* Progress */}
-          <circle
-            cx="70" cy="70" r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth="10"
-            strokeLinecap="round"
-            strokeDasharray={circ}
-            strokeDashoffset={dash}
-            style={{ transition: 'stroke-dashoffset 1s ease' }}
-          />
+          {/* Progress — hidden (full dash offset) when N/A, showing only the gray track */}
+          {!isNA && (
+            <circle
+              cx="70" cy="70" r={radius}
+              fill="none"
+              stroke={color}
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={circ}
+              strokeDashoffset={dash}
+              style={{ transition: 'stroke-dashoffset 1s ease' }}
+            />
+          )}
         </svg>
         {/* Centre label */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-4xl font-bold text-slate-900 leading-none">{score}</span>
-          <span className="text-xs text-slate-500 mt-1">/ 100</span>
+          {isNA ? (
+            <span className="text-4xl font-bold text-slate-400 leading-none">N/A</span>
+          ) : (
+            <>
+              <span className="text-4xl font-bold text-slate-900 leading-none">{score}</span>
+              <span className="text-xs text-slate-500 mt-1">/ 100</span>
+            </>
+          )}
         </div>
       </div>
-      <Badge label={risk} size="lg" />
-      <p className="text-xs text-slate-500">Trust Score · {risk} Risk</p>
+      {isNA ? (
+        <Badge label="Inactive" size="lg" />
+      ) : (
+        <Badge label={risk} size="lg" />
+      )}
+      <p className="text-xs text-slate-500">
+        {isNA ? 'Trust Score · Not Available' : `Trust Score · ${risk} Risk`}
+      </p>
     </div>
   );
 }

@@ -221,6 +221,8 @@ function devApiPlugin(env) {
             state: body.state || '',
             city: body.city || '',
             natureOfBusiness: body.natureOfBusiness || [],
+            mobileNumber: body.mobileNumber || '',
+            gstOtpVerified: body.gstOtpVerified || false,
             profileComplete: false,
             onboardingComplete: false,
             emailVerified: false,
@@ -333,6 +335,67 @@ function devApiPlugin(env) {
           }
           console.log('[dev-api] Trade submitted:', trade.counterpartyGSTIN, trade.status)
           return res.end(JSON.stringify({ success: true, tradeId, trade }))
+        }
+
+        // ---- /api/gst-otp ----
+        if (req.url === '/api/gst-otp') {
+          const { gstin, username } = req.body || {}
+          const clean = (gstin || '').trim().toUpperCase()
+          if (!clean || !username) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ success: false, error: 'GSTIN and GST portal username required' }))
+          }
+          try {
+            const token = await authenticate()
+            const apiRes = await fetch(`${BASE}/gst/compliance/tax-payer/otp`, {
+              method: 'POST',
+              headers: {
+                'Authorization': token,
+                'x-api-key': API_KEY,
+                'x-api-version': '1.0.0',
+                'x-source': 'primary',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ gstin: clean, username: username.trim() }),
+            })
+            const data = await apiRes.json()
+            console.log('[dev-api] OTP generate response:', data.code, data.message)
+            if (data.code === 200) return res.end(JSON.stringify({ success: true, refId: data.data?.ref_id || 'dev-ref' }))
+            return res.end(JSON.stringify({ success: false, error: data.message || 'OTP generation failed' }))
+          } catch (err) {
+            console.warn('[dev-api] OTP generate error:', err.message, '— returning mock success')
+            return res.end(JSON.stringify({ success: true, refId: 'dev-mock-ref' }))
+          }
+        }
+
+        // ---- /api/gst-otp-verify ----
+        if (req.url === '/api/gst-otp-verify') {
+          const { gstin, username, otp } = req.body || {}
+          if (!otp || String(otp).length !== 6) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ success: false, error: 'Enter 6-digit OTP' }))
+          }
+          try {
+            const token = await authenticate()
+            const apiRes = await fetch(`${BASE}/gst/compliance/tax-payer/otp/verify?otp=${encodeURIComponent(String(otp))}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': token,
+                'x-api-key': API_KEY,
+                'x-api-version': '1.0.0',
+                'x-source': 'primary',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ gstin: (gstin || '').trim().toUpperCase(), username: (username || '').trim() }),
+            })
+            const data = await apiRes.json()
+            console.log('[dev-api] OTP verify response:', data.code, data.message)
+            if (data.code === 200) return res.end(JSON.stringify({ success: true }))
+            return res.end(JSON.stringify({ success: false, error: data.message || 'Invalid OTP' }))
+          } catch (err) {
+            console.warn('[dev-api] OTP verify error:', err.message, '— returning mock success')
+            return res.end(JSON.stringify({ success: true }))
+          }
         }
 
         // Unknown API route

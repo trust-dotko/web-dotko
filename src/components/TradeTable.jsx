@@ -51,8 +51,13 @@ export default function TradeTable({ trades }) {
               ? trade.actualDays - trade.creditDays
               : null;
 
+            const isDefaulted = trade.status === 'Default/Written Off' || trade.status === 'Unpaid';
+
             return (
-              <tr key={trade.id} className="hover:bg-slate-50 transition-colors group">
+              <tr
+                key={trade.id}
+                className={`hover:bg-slate-50 transition-colors group ${isDefaulted ? 'border-l-4 border-l-red-500 bg-red-50/40' : ''}`}
+              >
                 {/* Party */}
                 <td className="py-3.5 px-4 pl-0">
                   <p className="font-medium text-slate-800">{partyName}</p>
@@ -66,7 +71,11 @@ export default function TradeTable({ trades }) {
 
                 {/* Amount */}
                 <td className="py-3.5 px-4 text-slate-700 font-mono text-xs">
-                  {amount > 0 ? formatCurrency(amount) : '—'}
+                  {amount > 0
+                    ? <span className={isDefaulted ? 'font-bold text-base text-red-700' : ''}>
+                        {formatCurrency(amount)}
+                      </span>
+                    : '—'}
                 </td>
 
                 {/* Credit Period */}
@@ -88,6 +97,9 @@ export default function TradeTable({ trades }) {
                 {/* Status */}
                 <td className="py-3.5 px-4 pr-0">
                   <Badge label={trade.status} />
+                  {isDefaulted && (
+                    <span className="ml-1 text-xs font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">DEFAULT</span>
+                  )}
                 </td>
               </tr>
             );

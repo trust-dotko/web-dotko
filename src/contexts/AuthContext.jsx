@@ -3,7 +3,6 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendEmailVerification,
   sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth';
@@ -26,7 +25,18 @@ export function AuthProvider({ children }) {
         // Load profile directly from Firestore (no Admin SDK needed)
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-          setProfile(snap.exists() ? snap.data() : null);
+          const profileData = snap.exists() ? snap.data() : null;
+
+          // Enforce suspension: sign out suspended users immediately
+          if (profileData?.suspended === true) {
+            await signOut(auth);
+            setUser(null);
+            setProfile(null);
+            setProfileLoading(false);
+            return;
+          }
+
+          setProfile(profileData);
         } catch {
           setProfile(null);
         }
@@ -56,18 +66,11 @@ export function AuthProvider({ children }) {
     signInWithEmailAndPassword(auth, email, password);
 
   // Signup — creates auth user + writes profile directly to Firestore
-  const signup = async (email, password, gstData = {}) => {
+  const signup = async (email, password, gstData = {}, phone = '') => {
     // 1. Create Firebase Auth user
     const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-    // 2. Send verification email
-    try {
-      await sendEmailVerification(cred.user);
-    } catch (e) {
-      console.warn('Email verification send failed:', e.message);
-    }
-
-    // 3. Write profile directly to Firestore (works in both dev and prod,
+    // 2. Write profile directly to Firestore (works in both dev and prod,
     //    no Admin SDK required). This ensures ProfileComplete always has
     //    pre-filled, locked data from the GST verification step.
     const businessName = gstData.tradeName || gstData.legalName || '';
@@ -88,6 +91,8 @@ export function AuthProvider({ children }) {
         updatedAt:        serverTimestamp(),
         profileComplete:  Boolean(gstData.gstin),
         onboardingCompleted: Boolean(gstData.gstin),
+        mobileNumber:     phone,
+        gstOtpVerified:   true,
       };
       await setDoc(doc(db, 'users', cred.user.uid), profileData, { merge: true });
       setProfile(profileData);
@@ -115,6 +120,8 @@ export function AuthProvider({ children }) {
           state:            gstData.principalAddress?.state || '',
           city:             gstData.principalAddress?.district || '',
           natureOfBusiness: gstData.natureOfBusinessActivities || [],
+          mobileNumber:     phone,
+          gstOtpVerified:   true,
         }),
       });
     } catch (e) {

@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Clock, Building2, TrendingUp, ChevronRight, Shield, Users, MapPin, CheckCircle, Briefcase } from 'lucide-react';
+import { TrendingUp, Shield, Users, MapPin, CheckCircle, Briefcase } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import GSTSearchBar from '../components/GSTSearchBar';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
-import { getRiskLevel, formatDate, calculateTrustScore } from '../data/trustEngine';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, limit, getDocs, getDoc, doc, getCountFromServer } from 'firebase/firestore';
+import { collection, getCountFromServer } from 'firebase/firestore';
 
 
 
@@ -21,47 +20,7 @@ export default function Dashboard() {
       document.getElementById('gst-search-input')?.focus();
     }
   }, [location.state]);
-  const [recentSearches,     setRecentSearches]     = useState([]);
   const [submittedTradeCount, setSubmittedTradeCount] = useState(null);
-
-  useEffect(() => {
-    const loadSearches = async () => {
-      if (!user) { setRecentSearches([]); return; }
-      try {
-        const q = query(
-          collection(db, 'users', user.uid, 'searches'),
-          orderBy('searchedAt', 'desc'),
-          limit(10)
-        );
-        const snap = await getDocs(q);
-        const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        // For records missing gstStatus (old cache), fetch company doc in parallel
-        const enriched = await Promise.all(raw.map(async (s) => {
-          let status       = s.gstStatus      || '';
-          let incorporated = s.incorporated   || '';
-
-          if (!status && s.gst) {
-            try {
-              const compSnap = await getDoc(doc(db, 'companies', s.gst));
-              if (compSnap.exists()) {
-                status       = compSnap.data().status      || '';
-                incorporated = compSnap.data().incorporated || '';
-              }
-            } catch { /* best-effort */ }
-          }
-
-          const { score } = calculateTrustScore([], { status, registrationDate: incorporated });
-          return { ...s, score };
-        }));
-
-        setRecentSearches(enriched);
-      } catch {
-        setRecentSearches([]);
-      }
-    };
-    loadSearches();
-  }, [user]);
 
   useEffect(() => {
     if (!user) { setSubmittedTradeCount(0); return; }
@@ -69,11 +28,6 @@ export default function Dashboard() {
       .then(snap => setSubmittedTradeCount(snap.data().count))
       .catch(() => setSubmittedTradeCount(0));
   }, [user]);
-
-  const enriched = recentSearches.map(s => ({
-    ...s,
-    risk: getRiskLevel(s.score ?? 50),
-  }));
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -135,7 +89,7 @@ export default function Dashboard() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <StatCard icon={TrendingUp} label="Recent Searches"   value={recentSearches.length.toString()} />
+          <StatCard icon={TrendingUp} label="Searches Done" value="0" />
           <StatCard icon={Shield}     label="Profile Status"    value={profile?.profileComplete !== false ? "Active" : "Pending"} />
           <StatCard
             icon={Briefcase}
@@ -147,73 +101,6 @@ export default function Dashboard() {
           <StatCard icon={Users}      label="Account Type"      value="User" />
         </div>
 
-        {/* Recent searches */}
-        {enriched.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 mb-6">
-            <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-brand-800" /> Recent Searches
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    {['Business', 'GSTIN', 'Trust Score', 'Risk', 'Searched'].map(h => (
-                      <th key={h} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2 px-3 first:pl-0">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {enriched.map(s => (
-                    <tr
-                      key={s.gst}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/report/${s.gst}`)}
-                    >
-                      <td className="py-3 px-3 pl-0 font-medium text-slate-800">{s.name}</td>
-                      <td className="py-3 px-3 font-mono text-xs text-slate-500">{s.gst}</td>
-                      <td className="py-3 px-3 font-bold text-slate-900">{s.score}</td>
-                      <td className="py-3 px-3"><Badge label={s.risk} /></td>
-                      <td className="py-3 px-3 text-slate-500 text-xs">
-                        {s.searchedAt
-                          ? formatDate(typeof s.searchedAt === 'string' ? s.searchedAt : s.searchedAt.toDate().toISOString())
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Quick access */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6">
-          <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-brand-800" /> Quick Access
-          </h3>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {enriched.length > 0 ? (
-              enriched.slice(0, 4).map(b => (
-                <button
-                  key={b.gst}
-                  onClick={() => navigate(`/report/${b.gst}`)}
-                  className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:border-brand-300 hover:bg-brand-50 transition-all text-left group"
-                >
-                  <div>
-                    <p className="font-medium text-slate-800 text-sm">{b.name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Trust Score: {b.score}</p>
-                    <p className="font-mono text-xs text-slate-400 mt-1">{b.gst}</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-800 transition-colors" />
-                </button>
-              ))
-            ) : (
-              <p className="text-sm text-slate-500 col-span-2">No recent searches. Try looking up a GSTIN above.</p>
-            )}
-          </div>
-        </div>
 
       </main>
     </div>

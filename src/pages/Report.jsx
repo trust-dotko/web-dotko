@@ -76,7 +76,7 @@ export default function Report() {
     load();
   }, [gst]);
 
-  const { score, factors } = useMemo(
+  const { score } = useMemo(
     () => calculateTrustScore(trades, {
       status: business?.status,
       registrationDate: business?.incorporated,
@@ -85,9 +85,10 @@ export default function Report() {
   );
   const risk  = useMemo(() => getRiskLevel(score),         [score]);
 
-  const paid        = trades.filter(t => t.status === 'Paid').length;
-  const delayed     = trades.filter(t => t.status === 'Delayed').length;
-  const unpaid      = trades.filter(t => t.status === 'Unpaid').length;
+  const paid        = trades.filter(t => t.status === 'Paid' || t.status === 'Paid on Time' || t.status === 'Paid Late').length;
+  const delayed     = trades.filter(t => t.status === 'Delayed' || t.status === 'Paid Late' || t.status === 'Partially Paid').length;
+  const unpaid      = trades.filter(t => t.status === 'Unpaid' || t.status === 'Default/Written Off').length;
+  const defaulted   = trades.filter(t => t.status === 'Default/Written Off' || t.status === 'Unpaid').length;
   const totalVolume = trades.reduce((sum, t) => sum + (t.amount || 0), 0);
 
   // Called by SubmitTradeModal after a successful API submission
@@ -221,10 +222,10 @@ export default function Report() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <StatCard icon={TrendingUp}    label="Total Volume" value={formatCurrency(totalVolume)} />
-          <StatCard icon={BadgeCheck}    label="Paid"         value={paid.toString()}    sub={`${trades.length} total trades`} />
-          <StatCard icon={AlertTriangle} label="Delayed"      value={delayed.toString()} />
-          <StatCard icon={AlertTriangle} label="Unpaid"       value={unpaid.toString()}  accent={unpaid > 0} />
+          <StatCard icon={TrendingUp}    label="Total Volume"   value={formatCurrency(totalVolume)} />
+          <StatCard icon={BadgeCheck}    label="Paid/Resolved" value={paid.toString()}      sub={`${trades.length} total trades`} />
+          <StatCard icon={AlertTriangle} label="Late/Partial"  value={delayed.toString()} />
+          <StatCard icon={AlertTriangle} label="Defaults"      value={defaulted.toString()} accent={defaulted > 0} />
         </div>
 
         {/* Trade history */}
@@ -243,37 +244,6 @@ export default function Report() {
           <TradeTable trades={trades} />
         </div>
 
-        {/* Score breakdown */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6">
-          <h2 className="font-semibold text-slate-900 mb-4">Score Breakdown</h2>
-          {trades.length === 0 ? (
-            <p className="text-sm text-slate-500">No trade history. Score defaults to 50.</p>
-          ) : (
-            <div className="space-y-2 text-sm">
-              {factors.map((f) => {
-                const colorClass =
-                  f.color === 'red'   ? 'text-red-600'   :
-                  f.color === 'amber' ? 'text-amber-600' :
-                  'text-slate-600';
-                const deltaText =
-                  f.delta === null ? 'capped at 30' :
-                  f.delta > 0      ? `+${f.delta}`  :
-                  f.delta < 0      ? `${f.delta}`   :
-                  '—';
-                return (
-                  <div key={f.label} className={`flex justify-between ${colorClass}`}>
-                    <span>{f.label}</span>
-                    <span className="font-medium">{deltaText}</span>
-                  </div>
-                );
-              })}
-              <div className="flex justify-between font-bold border-t border-slate-200 pt-2 text-slate-900">
-                <span>Final Trust Score</span>
-                <span>{score}</span>
-              </div>
-            </div>
-          )}
-        </div>
 
       </main>
 

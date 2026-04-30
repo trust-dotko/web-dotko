@@ -14,6 +14,7 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { rateLimit } from '../_rateLimit.js';
 
 if (!getApps().length) {
   initializeApp({
@@ -60,12 +61,25 @@ function isValidGSTIN(gstin = '') {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '';
+  const allowed = process.env.ALLOWED_ORIGIN || 'https://web.dotko.in';
+  res.setHeader('Access-Control-Allow-Origin', allowed);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+  const rl = rateLimit(`trade:${ip}`, 30, 60 * 60 * 1000);
+  if (rl.limited) {
+    res.setHeader('Retry-After', String(rl.retryAfter));
+    return res.status(429).json({ success: false, error: 'Too many requests. Please try again later.' });
+  }
 
   const decoded = await verifyToken(req);
   if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
@@ -154,6 +168,7 @@ export default async function handler(req, res) {
       submitterGSTIN:  (submitterGSTIN || '').trim().toUpperCase(),
       read:            false,
       createdAt:       now,
+      updatedAt:       now,
     });
 
     return res.status(200).json({ success: true });
