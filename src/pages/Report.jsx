@@ -7,7 +7,7 @@ import TradeTable from '../components/TradeTable';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import SubmitTradeModal from '../components/SubmitTradeModal';
-import { calculateTrustScore, getRiskLevel, formatCurrency } from '../data/trustEngine';
+import { calculateTrustScore, getRiskLevel, getRiskHeadline, getTrustPhrase, getRiskColors, formatCurrency } from '../data/trustEngine';
 import { db } from '../config/firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 
@@ -76,14 +76,26 @@ export default function Report() {
     load();
   }, [gst]);
 
-  const { score } = useMemo(
+  const { score, autoFlagged } = useMemo(
     () => calculateTrustScore(trades, {
-      status: business?.status,
-      registrationDate: business?.incorporated,
+      status:            business?.status,
+      incorporated:      business?.incorporated,
+      registrationDate:  business?.incorporated,
+      name:              business?.name,
+      legalName:         business?.legalName,
+      type:              business?.type,
+      registeredAddress: business?.registeredAddress,
+      city:              business?.city,
+      state:             business?.state,
+      isVerified:        business?.isVerified,
+      verifiedByDotko:   business?.verifiedByDotko,
     }),
-    [trades, business?.status, business?.incorporated]
+    [trades, business]
   );
-  const risk  = useMemo(() => getRiskLevel(score),         [score]);
+  const risk     = useMemo(() => getRiskLevel(score),      [score]);
+  const headline = useMemo(() => getRiskHeadline(risk),    [risk]);
+  const phrase   = useMemo(() => getTrustPhrase(score),    [score]);
+  const riskColors = useMemo(() => getRiskColors(risk),    [risk]);
 
   const paid        = trades.filter(t => t.status === 'Paid' || t.status === 'Paid on Time' || t.status === 'Paid Late').length;
   const delayed     = trades.filter(t => t.status === 'Delayed' || t.status === 'Paid Late' || t.status === 'Partially Paid').length;
@@ -216,6 +228,21 @@ export default function Report() {
                   </div>
                 )}
               </div>
+
+              {/* Trust advisory */}
+              {score !== null && (
+                <div className={`mt-4 rounded-xl border px-4 py-3 ${riskColors.bg} ${riskColors.border}`}>
+                  <p className={`text-xs font-semibold uppercase tracking-wide mb-0.5 ${riskColors.text}`}>
+                    {headline}
+                  </p>
+                  <p className={`text-sm ${riskColors.text}`}>{phrase}</p>
+                  {autoFlagged && (
+                    <p className="text-xs text-red-600 font-medium mt-1">
+                      ⚠ Auto-flagged: 6 or more negative trades on record.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -12,11 +12,30 @@ export const TRADE_STATUSES = [
 ];
 
 /**
- * calculateTrustScore
- * -------------------
+ * calculateTrustScore — MVP Logic
+ * --------------------------------
+ * Five pillars × 20 pts each = 100 max.
+ * Trade history applies dynamic deductions on top.
+ *
  * @param {Array} trades
- * @param {{ status?: string, registrationDate?: string }} businessMeta
- * @returns {{ score: number|null, factors: Array<{ label: string, delta: number|null, color: string }> }}
+ * @param {{
+ *   status?: string,
+ *   incorporated?: string,
+ *   registrationDate?: string,
+ *   name?: string,
+ *   legalName?: string,
+ *   type?: string,
+ *   registeredAddress?: string,
+ *   city?: string,
+ *   state?: string,
+ *   isVerified?: boolean,
+ *   verifiedByDotko?: boolean,
+ * }} businessMeta
+ * @returns {{
+ *   score: number|null,
+ *   autoFlagged: boolean,
+ *   factors: Array<{ label: string, delta: number|null, color: string }>
+ * }}
  */
 export function calculateTrustScore(trades = [], businessMeta = {}) {
   businessMeta = businessMeta ?? {};
@@ -24,102 +43,127 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
   // Inactive / Cancelled GST — not scored
   const inactiveStatuses = ['Cancelled', 'Inactive'];
   if (inactiveStatuses.includes(businessMeta.status)) {
-    return { score: null, factors: [{ label: `GST Status: ${businessMeta.status} — Not Scored`, delta: null, color: 'red' }] };
+    return {
+      score: null,
+      autoFlagged: false,
+      factors: [{ label: `GST Status: ${businessMeta.status} — Not Scored`, delta: null, color: 'red' }],
+    };
   }
-
-  const hasTrades = Array.isArray(trades) && trades.length > 0;
 
   const factors = [];
-  let score;
+  let score = 0;
 
-  if (hasTrades) {
-    factors.push({ label: 'Base score', delta: 100, color: 'neutral' });
-    score = 100;
-
-    // --- Legacy statuses (backward compat) ---
-    const unpaid  = trades.filter(t => t.status === 'Unpaid').length;
-    const delayed = trades.filter(t => t.status === 'Delayed').length;
-    const late    = trades.filter(t => t.status === 'Paid' && t.actualDays > t.creditDays).length;
-
-    if (unpaid > 0) {
-      const delta = -(unpaid * 20);
-      score += delta;
-      factors.push({ label: `Unpaid trades (${unpaid} × −20)`, delta, color: 'red' });
-    }
-    if (delayed > 0) {
-      const delta = -(delayed * 10);
-      score += delta;
-      factors.push({ label: `Delayed trades (${delayed} × −10)`, delta, color: 'amber' });
-    }
-    if (late > 0) {
-      const delta = -(late * 5);
-      score += delta;
-      factors.push({ label: `Late payments (${late} × −5)`, delta, color: 'amber' });
-    }
-
-    // --- New lifecycle statuses (proportional/weighted deductions) ---
-    const defaulted  = trades.filter(t => t.status === 'Default/Written Off').length;
-    const paidLate   = trades.filter(t => t.status === 'Paid Late').length;
-    const partial    = trades.filter(t => t.status === 'Partially Paid').length;
-    const disputed   = trades.filter(t => t.status === 'Disputed').length;
-    const pending    = trades.filter(t => t.status === 'Still Pending').length;
-    const totalTrades = trades.length;
-
-    if (defaulted > 0) {
-      const delta = -Math.round(0.5 * (defaulted / totalTrades) * 100);
-      score += delta;
-      factors.push({ label: `Default/Written Off (${defaulted}/${totalTrades} trades)`, delta, color: 'red' });
-    }
-    if (partial > 0) {
-      const delta = -Math.round(0.25 * (partial / totalTrades) * 100);
-      score += delta;
-      factors.push({ label: `Partially Paid (${partial}/${totalTrades} trades)`, delta, color: 'red' });
-    }
-    if (disputed > 0) {
-      const delta = -Math.round(0.15 * (disputed / totalTrades) * 100);
-      score += delta;
-      factors.push({ label: `Disputed trades (${disputed}/${totalTrades} trades)`, delta, color: 'amber' });
-    }
-    if (paidLate > 0) {
-      const delta = -Math.round(0.10 * (paidLate / totalTrades) * 100);
-      score += delta;
-      factors.push({ label: `Paid Late (${paidLate}/${totalTrades} trades)`, delta, color: 'amber' });
-    }
-    if (pending > 0) {
-      const delta = -Math.round(0.10 * (pending / totalTrades) * 100);
-      score += delta;
-      factors.push({ label: `Still Pending (${pending}/${totalTrades} trades)`, delta, color: 'amber' });
-    }
-  } else {
-    // No trade history — neutral base, businessMeta checks still apply
-    score = 50;
+  // ── Pillar 1: Identity & Registration (0 / 10 / 20) ──────────────────────
+  {
+    const hasName       = !!(businessMeta.name || businessMeta.legalName);
+    const hasEntityType = !!businessMeta.type;
+    const pts = (hasName && hasEntityType) ? 20 : hasName ? 10 : 0;
+    score += pts;
+    factors.push({ label: 'Identity & Registration', delta: pts, color: pts === 20 ? 'green' : pts === 10 ? 'amber' : 'red' });
   }
 
-  // New-business penalty (< 30 days since registration) — always evaluated
-  if (businessMeta.registrationDate) {
-    const reg  = new Date(businessMeta.registrationDate);
-    const now  = new Date();
-    const days = Math.floor((now - reg) / (1000 * 60 * 60 * 24));
-    if (days < 30) {
-      score -= 20;
-      factors.push({ label: 'New Business (< 30 days)', delta: -20, color: 'amber' });
+  // ── Pillar 2: Business Age (0 / 10 / 20) ─────────────────────────────────
+  {
+    const regStr = businessMeta.incorporated || businessMeta.registrationDate;
+    let pts = 10; // unknown → partial credit
+    if (regStr) {
+      const months = (Date.now() - new Date(regStr).getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+      pts = months >= 36 ? 20 : months >= 6 ? 10 : 0;
+    }
+    score += pts;
+    factors.push({ label: 'Business Age', delta: pts, color: pts === 20 ? 'green' : pts === 10 ? 'amber' : 'red' });
+  }
+
+  // ── Pillar 3: GST Compliance (0 / 10 / 20) ───────────────────────────────
+  {
+    const gstStatus = (businessMeta.status || '').toLowerCase();
+    const pts = gstStatus === 'active' ? 20 : (!gstStatus || gstStatus === 'provisional') ? 10 : 0;
+    score += pts;
+    factors.push({ label: 'GST Compliance', delta: pts, color: pts === 20 ? 'green' : pts === 10 ? 'amber' : 'red' });
+  }
+
+  // ── Pillar 4: Transparency & Verification (0 / 10 / 20) ──────────────────
+  {
+    const hasFullAddress = !!(businessMeta.registeredAddress && (businessMeta.city || businessMeta.state));
+    const hasAnyAddress  = !!(businessMeta.registeredAddress || businessMeta.city || businessMeta.state);
+    const pts = hasFullAddress ? 20 : hasAnyAddress ? 10 : 0;
+    score += pts;
+    factors.push({ label: 'Transparency & Verification', delta: pts, color: pts === 20 ? 'green' : pts === 10 ? 'amber' : 'red' });
+  }
+
+  // ── Pillar 5: Verified by Dotko (0 / 20) ─────────────────────────────────
+  {
+    const verified = !!(businessMeta.isVerified || businessMeta.verifiedByDotko);
+    const pts = verified ? 20 : 0;
+    score += pts;
+    factors.push({ label: 'Verified by Dotko', delta: pts, color: pts === 20 ? 'green' : 'red' });
+  }
+
+  // ── Dynamic trade-based adjustments ──────────────────────────────────────
+  if (Array.isArray(trades) && trades.length > 0) {
+    const delayed   = trades.filter(t => ['Delayed', 'Paid Late', 'Partially Paid'].includes(t.status));
+    const defaulted = trades.filter(t => ['Default/Written Off', 'Unpaid'].includes(t.status));
+    const disputed  = trades.filter(t => t.status === 'Disputed');
+    const negative  = delayed.length + defaulted.length + disputed.length;
+
+    if (delayed.length > 0) {
+      const delta = -(delayed.length * 5);
+      score += delta;
+      factors.push({ label: `Delayed Trades (${delayed.length} × −5)`, delta, color: 'amber' });
+    }
+    if (defaulted.length > 0) {
+      const delta = -(defaulted.length * 5);
+      score += delta;
+      factors.push({ label: `Default Trades (${defaulted.length} × −5)`, delta, color: 'red' });
+    }
+    if (disputed.length > 0) {
+      const delta = -(disputed.length * 5);
+      score += delta;
+      factors.push({ label: `Disputed Trades (${disputed.length} × −5)`, delta, color: 'amber' });
+    }
+
+    // 6+ negative trades → force Red regardless of base score
+    if (negative >= 6) {
+      factors.push({ label: 'Auto-flagged: High Risk (6+ negative trades)', delta: null, color: 'red' });
+      return { score: Math.min(49, Math.max(0, score)), autoFlagged: true, factors };
     }
   }
 
-  return { score: Math.max(0, Math.min(100, score)), factors };
+  return { score: Math.max(0, Math.min(100, score)), autoFlagged: false, factors };
 }
 
 /**
  * getRiskLevel
  * ------------
- * 75–100 → Low
- * 40–74  → Medium
- * 0–39   → High
+ * 80–100 → Low   (Green)
+ * 50–79  → Medium (Yellow)
+ * 0–49   → High  (Red)
  */
 export function getRiskLevel(score) {
-  if (score >= 75) return 'Low';
-  if (score >= 40) return 'Medium';
+  if (score >= 80) return 'Low';
+  if (score >= 50) return 'Medium';
   return 'High';
+}
+
+/**
+ * getRiskHeadline — short taglines shown alongside the score ring.
+ */
+export function getRiskHeadline(risk) {
+  switch (risk) {
+    case 'Low':    return 'Verified and Reliable · Safe to Trade · Low Risk Partner';
+    case 'Medium': return 'Proceed with Caution · Monitor Closely · Start Small';
+    default:       return 'High Risk · Advance Payment Recommended · Manual Review Required';
+  }
+}
+
+/**
+ * getTrustPhrase — advisory sentence shown below the score.
+ */
+export function getTrustPhrase(score) {
+  if (score === null) return null;
+  if (score >= 80) return "This partner has verified credentials and a reliable track record. You can proceed with standard terms.";
+  if (score >= 50) return "This partner has moderate verification. Consider starting with smaller orders or shorter payment cycles.";
+  return "This partner has limited verification or a concerning trade history. We recommend advance payment or using Dotko's protected payment options.";
 }
 
 export function getRiskColors(risk) {
@@ -132,8 +176,8 @@ export function getRiskColors(risk) {
 }
 
 export function getScoreColor(score) {
-  if (score >= 75) return '#10b981'; // emerald
-  if (score >= 40) return '#f59e0b'; // amber
+  if (score >= 80) return '#10b981'; // emerald / green
+  if (score >= 50) return '#f59e0b'; // amber  / yellow
   return '#ef4444';                  // red
 }
 

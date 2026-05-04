@@ -1,0 +1,111 @@
+DATE: 2026-04-30
+SUBJECT: fix: trade history shows reporter not subject; auth + OTP cleanup
+BODY: - TradeTable: show submitterName/submitterGSTIN (who filed) instead of
+  counterpartyName — fixes trades showing company's own name on their page
+- Column header renamed from "Party / Business" to "Reported By"
+- ProtectedRoute: remove emailVerified guard (broken redirect to removed page)
+- App.jsx: wrap /profile/complete in ProtectedRoute
+- Signup: remove phone field (GST portal sends OTP to registered mobile,
+  Dotko never receives that number); remove phone uniqueness check
+- gst-otp: surface inner data.data.error (AUTH4037) correctly instead of
+  treating outer code:200 as unconditional success
+- AuthContext: remove mobileNumber from signup payload
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+---
+DATE: 2026-04-30
+SUBJECT: fix: protect all routes, remove emailVerified guard
+BODY: 
+---
+DATE: 2026-04-30
+SUBJECT: feat: major platform update — auth, security, UI, trust score
+BODY: Auth:
+- 3-step signup: GST verify → Sandbox OTP (tax-payer/otp) → email+password
+- GST uniqueness enforced at OTP send; phone uniqueness at OTP verify
+- Remove email verification entirely (replaced by GST OTP)
+- Suspended users auto-signed-out via AuthContext
+
+Security:
+- Rate limiting: OTP 3/10min, verify 5/10min, trade 30/hr, register 5/hr
+- CORS locked to ALLOWED_ORIGIN (https://web.dotko.in)
+- Security headers: X-Content-Type-Options, X-Frame-Options, Referrer-Policy
+- No hardcoded secrets; all keys via env vars
+
+UI/UX:
+- Remove Recent Searches, Quick Access, Score Breakdown
+- Add Profile link to Navbar
+- ProfileComplete auto-fills from GST data (address, PAN, entity type, mobile)
+- Trade form pre-fills submitter info from profile
+
+Trust Score:
+- Inactive/Cancelled GST → null score (N/A), not scored
+- Proportional deductions: 2 defaults / 10 trades = 10pt, not 60pt
+- ScoreRing handles null with gray ring + Inactive badge
+
+Trade & Admin:
+- Defaults show red border + DEFAULT badge in TradeTable
+- Complaint display fixed: Complainant vs Against columns
+- User deletion cascades subcollections (submittedTrades, searches)
+- Firestore rules: admin can delete/update user docs
+- Timestamps enforced on all writes
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+---
+DATE: 2026-04-27
+SUBJECT: fix: handle partial auth deletion gracefully
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: fix: handle OPTIONS preflight before POST check in admin APIs
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: Fix: move CORS to vercel.json and add API safety guards
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: Fix: convert admin APIs to ESM and modular imports
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: fix
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: fix
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: fix
+BODY: 
+---
+DATE: 2026-04-27
+SUBJECT: profile fix
+BODY: 
+---
+DATE: 2026-04-26
+SUBJECT: updates
+BODY: 
+---
+DATE: 2026-04-25
+SUBJECT: update
+BODY: 
+---
+DATE: 2026-04-25
+SUBJECT: fix: TradeTable field names, submittedTrades rules, navbar submit trade routing
+BODY: 
+---
+DATE: 2026-04-25
+SUBJECT: fixes
+BODY: 
+---
+DATE: 2026-04-24
+SUBJECT: fix: restore white search card without examples
+BODY: 
+---
+DATE: 2026-04-24
+SUBJECT: feat: unified dotko.in web platform with Vercel serverless API
+BODY: 
+---

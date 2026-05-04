@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link, useNavigate, useMatch } from 'react-router-dom';
-import { LayoutDashboard, LogOut, LogIn, UserPlus, FileText, Briefcase, User } from 'lucide-react';
+import { LayoutDashboard, LogOut, LogIn, UserPlus, FileText, Briefcase, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
 
   const isReportPage = useMatch('/report/:gst');
@@ -56,6 +56,15 @@ export default function Navbar() {
                 <Briefcase className="w-4 h-4" />
                 My Trades
               </Link>
+              {profile?.gst && (
+                <Link
+                  to={`/report/${profile.gst}`}
+                  className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-800 transition-colors"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  My Trust Score
+                </Link>
+              )}
               <Link
                 to="/profile/complete"
                 className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-brand-800 transition-colors"
