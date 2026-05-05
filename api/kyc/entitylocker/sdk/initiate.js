@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   }
 
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-  const { limited, retryAfter } = rateLimit(ip, 'entitylocker_initiate', 5, 60);
+  const { limited, retryAfter } = rateLimit(ip + '_initiate', 5, 60000);
   if (limited) {
     return res.status(429).json({ error: 'Too many requests', retryAfter });
   }
@@ -61,6 +61,11 @@ export default async function handler(req, res) {
       'x-api-version': '1.0.0',
     };
 
+    const origin = req.headers.origin 
+      || (req.headers.referer ? new URL(req.headers.referer).origin : process.env.ALLOWED_ORIGIN)
+      || 'https://web.dotko.in';
+    const redirectUrl = `${origin}/signup?step=3`;
+
     // ── 2. Create EntityLocker session ───────────────────────────────────────
     // Using standard API endpoint to bypass broken SDK popup
     const initRes = await fetch(`${BASE_URL}/kyc/entitylocker/sessions/init`, {
@@ -69,7 +74,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         '@entity': 'in.co.sandbox.kyc.entitylocker.session.request',
         'flow': 'signin',
-        'redirect_url': process.env.ALLOWED_ORIGIN || 'https://dotko.in',
+        'redirect_url': redirectUrl,
       }),
     });
     
@@ -96,7 +101,7 @@ export default async function handler(req, res) {
       theme:   { mode: 'light' },
     });
   } catch (err) {
-    console.error('[entitylocker/initiate] Exception:', err.message);
-    return res.status(500).json({ error: 'Internal server error. Please try again.' });
+    console.error('[entitylocker/initiate] Exception:', err.stack);
+    return res.status(500).json({ error: 'Internal server error', details: err.message });
   }
 }

@@ -131,7 +131,9 @@ export default function Signup() {
       // Ensure session is ready
       if (!sessionRef.current) {
         const initBody = await fetch('/api/kyc/entitylocker/sdk/initiate', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
         }).then(r => r.json());
         
         if (!initBody.session_id) throw new Error(initBody.error || 'Could not start a verification session.');

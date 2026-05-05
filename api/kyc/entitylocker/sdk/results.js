@@ -37,7 +37,7 @@ export default async function handler(req, res) {
   }
 
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-  const { limited, retryAfter } = rateLimit(ip, 'entitylocker_results', 10, 60);
+  const { limited, retryAfter } = rateLimit(ip + '_results', 10, 60000);
   if (limited) {
     return res.status(429).json({ error: 'Too many requests', retryAfter });
   }
@@ -106,8 +106,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, data });
   } catch (err) {
-    console.error('[entitylocker/results] Exception:', err.message);
-    return res.status(500).json({ error: 'Internal server error. Please try again.' });
+    console.error('[entitylocker/results] Exception:', err.stack);
+    return res.status(500).json({ error: 'Internal server error', details: err.message });
   }
 }
 
