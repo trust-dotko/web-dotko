@@ -111,6 +111,34 @@ function devApiPlugin(env) {
     }
   }
 
+  // documents = { gstn_details, company_master_details, udhyam_certificate }, meta = session status body
+  function parseEntityLockerDev(documents, meta = {}) {
+    const gstn    = documents.gstn_details            || {}
+    const company = documents.company_master_details  || {}
+    const udyam   = documents.udhyam_certificate      || {}
+    const pick    = (...vs) => vs.find(v => v && String(v).trim() !== '') ?? ''
+    const addr    = gstn.principal_address || gstn.address_details || {}
+    const legalName = pick(gstn.legal_name, gstn.legalName, company.company_name, company.name, meta.legal_name)
+    return {
+      gstin:                   pick(gstn.gstin,               gstn.gstIn,              meta.gstin),
+      legalName,
+      tradeName:               pick(gstn.trade_name,          gstn.tradeName,          meta.trade_name) || legalName,
+      status:                  pick(gstn.status,              gstn.gst_status,         meta.status, 'Active'),
+      registrationDate:        pick(gstn.registration_date,   gstn.registrationDate,   meta.registration_date),
+      constitutionOfBusiness:  pick(gstn.constitution_of_business, gstn.constitution,  company.company_category, meta.constitution_of_business),
+      principalAddress: {
+        state:       pick(addr.state,        gstn.state,    company.registered_address?.state,   meta.state),
+        district:    pick(addr.district,     addr.city,     gstn.city,   company.registered_address?.city,    meta.city),
+        fullAddress: pick(addr.full_address, addr.address,  gstn.address, company.registered_address?.address, meta.address),
+      },
+      natureOfBusinessActivities: Array.isArray(gstn.nature_of_business_activities)
+        ? gstn.nature_of_business_activities : [],
+      udyamRegistrationNumber: pick(udyam.udyam_registration_number, udyam.registration_number),
+      entityLockerVerified:    true,
+      sessionId:               meta.session_id,
+    }
+  }
+
   return {
     name: 'dev-api-middleware',
     configureServer(server) {
@@ -337,67 +365,124 @@ function devApiPlugin(env) {
           return res.end(JSON.stringify({ success: true, tradeId, trade }))
         }
 
-        // ---- /api/gst-otp ----
-        if (req.url === '/api/gst-otp') {
-          const { gstin, username } = req.body || {}
-          const clean = (gstin || '').trim().toUpperCase()
-          if (!clean || !username) {
-            res.statusCode = 400
-            return res.end(JSON.stringify({ success: false, error: 'GSTIN and GST portal username required' }))
+        // ---- /api/kyc/entitylocker/sdk/initiate ----
+        // Uses the same Sandbox.co.in credentials as GST verification — no new keys needed
+        if (req.url === '/api/kyc/entitylocker/sdk/initiate' && req.method === 'POST') {
+          if (API_KEY && SECRET) {
+            try {
+              const token  = await authenticate()
+              const upRes  = await fetch(`${BASE}/kyc/entitylocker/sessions/init`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type':  'application/json',
+                  'Authorization': token,
+                  'x-api-key':     API_KEY,
+                  'x-api-version': '1.0.0',
+                },
+                body: JSON.stringify({
+                  '@entity':      'in.co.sandbox.kyc.entitylocker.session.request',
+                  'flow':         'signin',
+                  'redirect_url': 'http://localhost:5173/signup?step=3',
+                }),
+              })
+              const upData     = await upRes.json().catch(() => ({}))
+              const session_id = upData.data?.id || upData.session_id || upData.data?.session_id || upData.data?.session?.id
+              const authorization_url = upData.data?.authorization_url || upData.authorization_url || upData.data?.session?.authorization_url
+
+              if ((upRes.ok || upData.code === 200) && session_id) {
+                console.log('[dev-api] EntityLocker initiate OK, session_id:', session_id)
+                return res.end(JSON.stringify({
+                  session_id,
+                  authorization_url,
+                  api_key: API_KEY,
+                  brand:   { name: 'Dotko', logo_url: 'https://dotko.in/icon.png' },
+                  theme:   { mode: 'light' },
+                }))
+              }
+              console.warn('[dev-api] EntityLocker initiate failed:', upRes.status, upData)
+            } catch (err) {
+              console.warn('[dev-api] EntityLocker initiate error:', err.message, '— falling back to mock')
+            }
           }
-          try {
-            const token = await authenticate()
-            const apiRes = await fetch(`${BASE}/gst/compliance/tax-payer/otp`, {
-              method: 'POST',
-              headers: {
-                'Authorization': token,
-                'x-api-key': API_KEY,
-                'x-api-version': '1.0.0',
-                'x-source': 'primary',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ gstin: clean, username: username.trim() }),
-            })
-            const data = await apiRes.json()
-            const innerError = data.data?.error
-            console.log('[dev-api] OTP generate response:', data.code, innerError?.error_cd || data.message)
-            if (data.code === 200 && !innerError) return res.end(JSON.stringify({ success: true, refId: data.data?.ref_id || '' }))
-            const errMsg = innerError?.message || data.message || 'OTP generation failed'
-            return res.end(JSON.stringify({ success: false, error: errMsg }))
-          } catch (err) {
-            console.warn('[dev-api] OTP generate error:', err.message, '— returning mock success')
-            return res.end(JSON.stringify({ success: true, refId: 'dev-mock-ref' }))
-          }
+
+          // Dev fallback: mock session so the UI is fully testable without live credentials
+          const mockSessionId = `dev-session-${Date.now()}`
+          console.log('[dev-api] EntityLocker initiate — mock session:', mockSessionId)
+          return res.end(JSON.stringify({
+            session_id: mockSessionId,
+            authorization_url: 'mock-url',
+            api_key: 'dev-mock-key',
+            brand: { name: 'Dotko', logo_url: 'https://dotko.in/icon.png' },
+            theme: { mode: 'light' },
+          }))
         }
 
-        // ---- /api/gst-otp-verify ----
-        if (req.url === '/api/gst-otp-verify') {
-          const { gstin, username, otp } = req.body || {}
-          if (!otp || String(otp).length !== 6) {
+        // ---- /api/kyc/entitylocker/sdk/results ----
+        if (req.url === '/api/kyc/entitylocker/sdk/results' && req.method === 'POST') {
+          const { session_id } = req.body || {}
+          if (!session_id) {
             res.statusCode = 400
-            return res.end(JSON.stringify({ success: false, error: 'Enter 6-digit OTP' }))
+            return res.end(JSON.stringify({ error: 'session_id is required' }))
           }
-          try {
-            const token = await authenticate()
-            const apiRes = await fetch(`${BASE}/gst/compliance/tax-payer/otp/verify?otp=${encodeURIComponent(String(otp))}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': token,
-                'x-api-key': API_KEY,
-                'x-api-version': '1.0.0',
-                'x-source': 'primary',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ gstin: (gstin || '').trim().toUpperCase(), username: (username || '').trim() }),
-            })
-            const data = await apiRes.json()
-            console.log('[dev-api] OTP verify response:', data.code, data.message)
-            if (data.code === 200) return res.end(JSON.stringify({ success: true }))
-            return res.end(JSON.stringify({ success: false, error: data.message || 'Invalid OTP' }))
-          } catch (err) {
-            console.warn('[dev-api] OTP verify error:', err.message, '— returning mock success')
-            return res.end(JSON.stringify({ success: true }))
+
+          if (API_KEY && SECRET && !session_id.startsWith('dev-session-')) {
+            try {
+              const token   = await authenticate()
+              const headers = { 'Authorization': token, 'x-api-key': API_KEY, 'x-api-version': '1.0.0' }
+              const sid     = encodeURIComponent(session_id)
+
+              // 1. Check session status
+              const statusRes  = await fetch(`${BASE}/kyc/entitylocker/sessions/${sid}/status`, { method: 'GET', headers })
+              const statusBody = await statusRes.json().catch(() => ({}))
+              if (!statusRes.ok && statusBody.code !== 200) {
+                console.warn('[dev-api] EntityLocker status failed:', statusRes.status, statusBody)
+                throw new Error(statusBody.message || 'Status check failed')
+              }
+
+              // 2. Fetch documents in parallel
+              const DOC_TYPES = ['gstn_details', 'company_master_details', 'udhyam_certificate']
+              const documents = {}
+              await Promise.allSettled(DOC_TYPES.map(async (docType) => {
+                const r = await fetch(`${BASE}/kyc/entitylocker/sessions/${sid}/documents/${docType}`, { method: 'GET', headers })
+                const b = await r.json().catch(() => ({}))
+                if (r.ok || b.code === 200) {
+                  documents[docType] = b.data ?? b
+                } else {
+                  console.warn(`[dev-api] Doc ${docType} not available (${r.status})`)
+                }
+              }))
+
+              if (Object.keys(documents).length > 0) {
+                const data = parseEntityLockerDev(documents, statusBody.data ?? statusBody)
+                console.log('[dev-api] EntityLocker results OK, gstin:', data.gstin)
+                return res.end(JSON.stringify({ success: true, data }))
+              }
+              console.warn('[dev-api] No documents returned — falling back to mock')
+            } catch (err) {
+              console.warn('[dev-api] EntityLocker results error:', err.message, '— falling back to mock')
+            }
           }
+
+          // Dev fallback: plausible mock business data
+          const mockData = {
+            gstin:                   '24CUUPP7030B1ZL',
+            legalName:               'KILO BYTE INDUSTRIES',
+            tradeName:               'KILO BYTE INDUSTRIES',
+            status:                  'Active',
+            constitutionOfBusiness:  'Proprietorship',
+            registrationDate:        '01/07/2017',
+            principalAddress: {
+              state:       'Gujarat',
+              district:    'Surat',
+              fullAddress: '123, Industrial Area, Surat, Gujarat – 395001',
+            },
+            natureOfBusinessActivities: ['Retail Business'],
+            panNumber:              'CUUPP7030B',
+            entityLockerVerified:   true,
+            sessionId:              session_id,
+          }
+          console.log('[dev-api] EntityLocker results — mock data for session:', session_id)
+          return res.end(JSON.stringify({ success: true, data: mockData }))
         }
 
         // Unknown API route
