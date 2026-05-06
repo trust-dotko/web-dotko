@@ -107,7 +107,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, data });
   } catch (err) {
     console.error('[entitylocker/results] Exception:', err.stack);
-    return res.status(500).json({ error: 'Internal server error', details: err.message });
+    return res.status(500).json({ 
+      error: 'Internal server error', 
+      details: err.message,
+      debug: {
+        key_prefix: API_KEY ? API_KEY.substring(0, 15) + '...' : 'none',
+        base_url: BASE_URL,
+        is_test: useTest
+      }
+    });
   }
 }
 

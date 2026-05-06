@@ -140,9 +140,9 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
  * 0–49   → High  (Red)
  */
 export function getRiskLevel(score) {
-  if (score >= 80) return 'Low';
-  if (score >= 50) return 'Medium';
-  return 'High';
+  if (score >= 80) return 'Low Risk';
+  if (score >= 50) return 'Medium Risk';
+  return 'High Risk';
 }
 
 /**
@@ -150,8 +150,8 @@ export function getRiskLevel(score) {
  */
 export function getRiskHeadline(risk) {
   switch (risk) {
-    case 'Low':    return 'Verified and Reliable · Safe to Trade · Low Risk Partner';
-    case 'Medium': return 'Proceed with Caution · Monitor Closely · Start Small';
+    case 'Low Risk':    return 'Verified and Reliable · Safe to Trade · Low Risk Partner';
+    case 'Medium Risk': return 'Proceed with Caution · Monitor Closely · Start Small';
     default:       return 'High Risk · Advance Payment Recommended · Manual Review Required';
   }
 }
@@ -168,9 +168,9 @@ export function getTrustPhrase(score) {
 
 export function getRiskColors(risk) {
   switch (risk) {
-    case 'Low':    return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' };
-    case 'Medium': return { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500'   };
-    case 'High':   return { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     };
+    case 'Low Risk':    return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' };
+    case 'Medium Risk': return { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500'   };
+    case 'High Risk':   return { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     };
     default:       return { bg: 'bg-slate-50',   text: 'text-slate-600',   border: 'border-slate-200',   dot: 'bg-slate-400'   };
   }
 }
