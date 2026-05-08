@@ -34,7 +34,7 @@ export default function Navbar() {
             className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform"
           />
           <div>
-            <span className="font-bold text-slate-900 text-sm tracking-tight">dotko.in</span>
+            <span className="font-bold text-brand-800 text-sm tracking-tight">dotko.in</span>
             <span className="hidden sm:inline-block text-xs text-slate-400 ml-2">MSME Trust Intelligence</span>
           </div>
         </Link>
