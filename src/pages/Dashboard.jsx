@@ -5,6 +5,8 @@ import Navbar from '../components/Navbar';
 import GSTSearchBar from '../components/GSTSearchBar';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
+import PendingVerificationBanner from '../components/PendingVerificationBanner';
+import TradeVerificationModal from '../components/TradeVerificationModal';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
 import { collection, getCountFromServer } from 'firebase/firestore';
@@ -20,7 +22,9 @@ export default function Dashboard() {
       document.getElementById('gst-search-input')?.focus();
     }
   }, [location.state]);
-  const [submittedTradeCount, setSubmittedTradeCount] = useState(null);
+  const [submittedTradeCount,  setSubmittedTradeCount]  = useState(null);
+  const [showVerifyModal,      setShowVerifyModal]      = useState(false);
+  const [bannerKey,            setBannerKey]            = useState(0);
 
   useEffect(() => {
     if (!user) { setSubmittedTradeCount(0); return; }
@@ -49,6 +53,15 @@ export default function Dashboard() {
           </div>
           <GSTSearchBar placeholder="Search any GSTIN to view report or submit trade…" />
         </div>
+
+        {/* Pending verification banner — shown if user has a GSTIN and trades to review */}
+        {profile?.gst && (
+          <PendingVerificationBanner
+            key={bannerKey}
+            userGSTIN={profile.gst}
+            onReview={() => setShowVerifyModal(true)}
+          />
+        )}
 
         {/* User's Business Profile */}
         {user && (
@@ -103,6 +116,13 @@ export default function Dashboard() {
 
 
       </main>
+
+      {showVerifyModal && profile?.gst && (
+        <TradeVerificationModal
+          userGSTIN={profile.gst}
+          onClose={() => { setShowVerifyModal(false); setBannerKey(k => k + 1); }}
+        />
+      )}
     </div>
   );
 }

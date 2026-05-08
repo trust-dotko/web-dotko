@@ -104,27 +104,42 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
     const delayed   = trades.filter(t => ['Delayed', 'Paid Late', 'Partially Paid'].includes(t.status));
     const defaulted = trades.filter(t => ['Default/Written Off', 'Unpaid'].includes(t.status));
     const disputed  = trades.filter(t => t.status === 'Disputed');
-    const negative  = delayed.length + defaulted.length + disputed.length;
+
+    // Weight each trade deduction by its verification status:
+    // verified (or legacy) = 1.0 full weight, disputed = 0.3, pending/expired = 0.5
+    const verificationWeight = (trade) => {
+      const vs = trade.verificationStatus;
+      if (!vs || vs === 'verified') return 1.0;
+      if (vs === 'disputed') return 0.3;
+      if (vs === 'pending_verification') {
+        return 0.5;
+      }
+      return 1.0;
+    };
+
+    // Count fully-verified negative trades for the auto-flag threshold
+    const verifiedNegative = [...delayed, ...defaulted, ...disputed]
+      .filter(t => verificationWeight(t) === 1.0).length;
 
     if (delayed.length > 0) {
-      const delta = -(delayed.length * 5);
+      const delta = -Math.round(delayed.reduce((s, t) => s + 5 * verificationWeight(t), 0) * 10) / 10;
       score += delta;
-      factors.push({ label: `Delayed Trades (${delayed.length} × −5)`, delta, color: 'amber' });
+      factors.push({ label: `Delayed Trades (${delayed.length})`, delta, color: 'amber' });
     }
     if (defaulted.length > 0) {
-      const delta = -(defaulted.length * 5);
+      const delta = -Math.round(defaulted.reduce((s, t) => s + 5 * verificationWeight(t), 0) * 10) / 10;
       score += delta;
-      factors.push({ label: `Default Trades (${defaulted.length} × −5)`, delta, color: 'red' });
+      factors.push({ label: `Default Trades (${defaulted.length})`, delta, color: 'red' });
     }
     if (disputed.length > 0) {
-      const delta = -(disputed.length * 5);
+      const delta = -Math.round(disputed.reduce((s, t) => s + 5 * verificationWeight(t), 0) * 10) / 10;
       score += delta;
-      factors.push({ label: `Disputed Trades (${disputed.length} × −5)`, delta, color: 'amber' });
+      factors.push({ label: `Disputed Trades (${disputed.length})`, delta, color: 'amber' });
     }
 
-    // 6+ negative trades → force Red regardless of base score
-    if (negative >= 6) {
-      factors.push({ label: 'Auto-flagged: High Risk (6+ negative trades)', delta: null, color: 'red' });
+    // 6+ fully-verified negative trades → force Red regardless of base score
+    if (verifiedNegative >= 6) {
+      factors.push({ label: 'Auto-flagged: High Risk (6+ verified negative trades)', delta: null, color: 'red' });
       return { score: Math.min(49, Math.max(0, score)), autoFlagged: true, factors };
     }
   }

@@ -265,23 +265,28 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
       if (allFiles.length) setUploadStatus('Saving trade…');
 
       const cleanGSTIN   = form.counterpartyGSTIN.trim().toUpperCase();
+      const verificationDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
       const tradePayload = {
-        counterpartyGSTIN: cleanGSTIN,
-        counterpartyName:  form.counterpartyName.trim(),
-        tradeType:         form.tradeType,
-        invoiceNumber:     form.invoiceNumber.trim(),
-        tradeValue:        Number(form.tradeValue),
-        creditPeriod:      Number(form.creditPeriod),
-        invoiceDate:       form.invoiceDate,
-        paymentDueDate:    form.paymentDueDate,
-        status:            form.status,
-        submittedBy:       user.uid,
-        submitterGSTIN:    (profile?.gst || '').trim().toUpperCase(),
-        submitterName:     (profile?.businessName || profile?.legalName || '').trim(),
+        counterpartyGSTIN:    cleanGSTIN,
+        counterpartyName:     form.counterpartyName.trim(),
+        tradeType:            form.tradeType,
+        invoiceNumber:        form.invoiceNumber.trim(),
+        tradeValue:           Number(form.tradeValue),
+        creditPeriod:         Number(form.creditPeriod),
+        invoiceDate:          form.invoiceDate,
+        paymentDueDate:       form.paymentDueDate,
+        status:               form.status,
+        submittedBy:          user.uid,
+        submitterGSTIN:       (profile?.gst || '').trim().toUpperCase(),
+        submitterName:        (profile?.businessName || profile?.legalName || '').trim(),
         invoiceUrls,
         ledgerUrls,
-        createdAt:         serverTimestamp(),
-        updatedAt:         serverTimestamp(),
+        verificationStatus:   'pending_verification',
+        verificationDeadline,
+        verificationResponse: null,
+        createdAt:            serverTimestamp(),
+        updatedAt:            serverTimestamp(),
       };
 
       // 2. Write trade to company subcollection

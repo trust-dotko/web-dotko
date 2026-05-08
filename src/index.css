@@ -25,6 +25,14 @@
 }
 
 @layer utilities {
+  /* Hidden in public view; visible when pdf-download-mode is active */
+  .pdf-only {
+    display: none;
+  }
+  .pdf-download-mode .pdf-only {
+    display: table-cell;
+  }
+
   .score-pulse {
     animation: score-pulse 2s ease-in-out infinite;
   }

@@ -111,11 +111,12 @@ export default function Report() {
   };
 
   const handleDownload = async () => {
+    const element = document.getElementById('report-main');
+    element.classList.add('pdf-download-mode');
     try {
       const { default: jsPDF }       = await import('jspdf');
       const { default: html2canvas } = await import('html2canvas');
 
-      const element = document.getElementById('report-main');
       const canvas  = await html2canvas(element, { scale: 2, useCORS: true });
       const imgData = canvas.toDataURL('image/png');
 
@@ -136,6 +137,8 @@ export default function Report() {
     } catch (err) {
       console.error('PDF generation failed:', err);
       alert('Could not generate PDF. Please try again.');
+    } finally {
+      element.classList.remove('pdf-download-mode');
     }
   };
 
