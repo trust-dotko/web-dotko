@@ -314,6 +314,22 @@ function devApiPlugin(env) {
           return res.end(JSON.stringify({ score: 50, label: 'Caution', description: 'Limited verification', color: '#F59E0B' }))
         }
 
+        // ---- /api/storage/upload ----
+        if (req.url === '/api/storage/upload' && req.method === 'POST') {
+          const body = req.body || {}
+          const { contentType, userId, filename } = body
+          if (!body.fileBase64 || !contentType || !userId || !filename) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ error: 'Missing required fields' }))
+          }
+          // In dev mode, return a placeholder URL (no real upload)
+          const mockToken = `dev-${Date.now()}`
+          const encodedPath = encodeURIComponent(`trade-documents/${userId}/${filename}`)
+          const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/dotko-b2543.firebasestorage.app/o/${encodedPath}?alt=media&token=${mockToken}`
+          console.log('[dev-api] Storage upload (mock):', filename)
+          return res.end(JSON.stringify({ success: true, downloadUrl }))
+        }
+
         // ---- /api/trade/submit ----
         if (req.url === '/api/trade/submit' && req.method === 'POST') {
           const body = req.body || {}

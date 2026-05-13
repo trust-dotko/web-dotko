@@ -27,6 +27,7 @@ export default function ProfileComplete() {
   const [form, setForm] = useState({
     businessName: '', gst: '', entityType: '', pan: '',
     city: '', state: '', address: '', mobileNumber: '', establishmentYear: '',
+    email: '',
   });
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
@@ -46,9 +47,10 @@ export default function ProfileComplete() {
         address:           profile.address || '',
         mobileNumber:      profile.mobileNumber || '',
         establishmentYear: profile.establishmentYear || '',
+        email:             profile.email || user?.email || '',
       });
     }
-  }, [profile]);
+  }, [profile, user]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -155,6 +157,20 @@ export default function ProfileComplete() {
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>
             )}
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                Email Address
+                <span className="ml-2 text-emerald-600 font-normal">auto-fetched</span>
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                disabled
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
+                placeholder="your@email.com"
+              />
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1.5">
