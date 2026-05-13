@@ -9,7 +9,7 @@ import Badge from '../components/Badge';
 import SubmitTradeModal from '../components/SubmitTradeModal';
 import { calculateTrustScore, getRiskLevel, getRiskHeadline, getTrustPhrase, getRiskColors, formatCurrency } from '../data/trustEngine';
 import { db } from '../config/firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 
 export default function Report() {
   const { gst }     = useParams();
@@ -60,7 +60,7 @@ export default function Report() {
         // 3. Load trades subcollection
         let tradesSnap;
         try {
-          tradesSnap = await getDocs(collection(db, 'companies', gst, 'trades'));
+          tradesSnap = await getDocs(query(collection(db, 'companies', gst, 'trades'), orderBy('createdAt', 'desc'), limit(100)));
           setTrades(tradesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         } catch (e) {
           console.warn('Firestore read error on trades:', e.message);

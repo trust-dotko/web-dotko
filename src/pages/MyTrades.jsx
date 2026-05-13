@@ -7,7 +7,7 @@ import SubmitTradeModal from '../components/SubmitTradeModal';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
 import {
-  collection, query, orderBy, getDocs,
+  collection, query, orderBy, limit, getDocs,
   doc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { TRADE_STATUSES, formatCurrency, formatDate } from '../data/trustEngine';
@@ -52,7 +52,8 @@ export default function MyTrades() {
     try {
       const q = query(
         collection(db, 'users', user.uid, 'submittedTrades'),
-        orderBy('createdAt', 'desc')
+        orderBy('createdAt', 'desc'),
+        limit(100)
       );
       const snap = await getDocs(q);
       setTrades(snap.docs.map(d => ({ id: d.id, ...d.data() })));

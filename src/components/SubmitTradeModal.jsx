@@ -4,10 +4,11 @@ import { X, CheckCircle2, Loader2, Search, Lock, Upload, FileText, Image, Trash2
 import { useAuth } from '../contexts/AuthContext';
 import ProfileGuard from './ProfileGuard';
 import { TRADE_STATUSES, isValidGST, mapTradeStatusToReportStatus, mapTradeTypeToComplaintType } from '../data/trustEngine';
-import { db } from '../config/firebase';
+import { db, storage } from '../config/firebase';
 import {
   collection, addDoc, doc, setDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 const TRADE_TYPES = ['Sale', 'Purchase', 'Service Provided', 'Service Received'];
 
@@ -136,23 +137,17 @@ function FileChip({ file, onRemove }) {
   );
 }
 
-/** Upload a single file via the server-side proxy, returns download URL */
-async function uploadFile(file, userId, authToken) {
+/** Upload a single file directly to Firebase Storage, returns download URL */
+async function uploadFile(file, userId) {
   const filename = `${Date.now()}_${sanitizeFilename(file.name)}`;
-  const fileBase64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+  const storageRef = ref(storage, `trade-invoices/${userId}/${filename}`);
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+    task.on('state_changed', null, reject, async () => {
+      try { resolve(await getDownloadURL(task.snapshot.ref)); }
+      catch (e) { reject(e); }
+    });
   });
-  const res = await fetch('/api/storage/upload', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-    body: JSON.stringify({ fileBase64, contentType: file.type, userId, filename }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Upload failed');
-  return data.downloadUrl;
 }
 
 export default function SubmitTradeModal({ gst: prefilledGST, businessName: prefilledName, onClose, onSuccess }) {
@@ -256,11 +251,10 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
       const invoiceUrls = [];
       const ledgerUrls  = [];
 
-      const authToken = allFiles.length ? await user.getIdToken() : '';
       for (let i = 0; i < allFiles.length; i++) {
         const { file, category } = allFiles[i];
         setUploadStatus(`Uploading ${i + 1}/${allFiles.length}: ${file.name}…`);
-        const url = await uploadFile(file, user.uid, authToken);
+        const url = await uploadFile(file, user.uid);
         if (category === 'invoice') invoiceUrls.push(url);
         else                        ledgerUrls .push(url);
       }
