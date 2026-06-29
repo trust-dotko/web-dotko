@@ -1,28 +1,36 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  signOut,
-} from 'firebase/auth';
+import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import { auth, db } from '../config/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
 const AuthContext = createContext(null);
 
+/** Authenticated fetch — attaches the current user's Firebase ID token. */
+async function authedFetch(path, body) {
+  const current = auth.currentUser;
+  if (!current) throw new Error('Not signed in.');
+  const token = await current.getIdToken();
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed.');
+  return data;
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser]         = useState(undefined); // undefined = loading
-  const [profile, setProfile]   = useState(null);
+  const [user, setUser] = useState(undefined); // undefined = still loading
+  const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
-  // Listen to Firebase Auth state
+  // Listen to Firebase Auth state and load the user's profile.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser ?? null);
 
       if (firebaseUser) {
-        // Load profile directly from Firestore (no Admin SDK needed)
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
           const profileData = snap.exists() ? snap.data() : null;
@@ -35,7 +43,6 @@ export function AuthProvider({ children }) {
             setProfileLoading(false);
             return;
           }
-
           setProfile(profileData);
         } catch {
           setProfile(null);
@@ -48,11 +55,10 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  // Refresh profile directly from Firestore
   const refreshProfile = async () => {
-    if (!user) return null;
+    if (!auth.currentUser) return null;
     try {
-      const snap = await getDoc(doc(db, 'users', user.uid));
+      const snap = await getDoc(doc(db, 'users', auth.currentUser.uid));
       const profileData = snap.exists() ? snap.data() : null;
       setProfile(profileData);
       return profileData;
@@ -61,101 +67,65 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Login
-  const login = (email, password) =>
-    signInWithEmailAndPassword(auth, email, password);
+  // ── Phone + WhatsApp OTP authentication ────────────────────────────────────
 
-  // Signup — creates auth user + writes profile directly to Firestore
-  const signup = async (email, password, gstData = {}, phone = '') => {
-    // 1. Create Firebase Auth user
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-
-    // 2. Write profile directly to Firestore (works in both dev and prod,
-    //    no Admin SDK required). This ensures ProfileComplete always has
-    //    pre-filled, locked data from the GST verification step.
-    const businessName = gstData.tradeName || gstData.legalName || '';
-    try {
-      const profileData = {
-        email,
-        businessName,
-        legalName:        gstData.legalName || '',
-        tradeName:        gstData.tradeName || '',
-        gst:              gstData.gstin || '',
-        entityType:       gstData.constitutionOfBusiness || '',
-        gstStatus:        gstData.status || '',
-        registrationDate: gstData.registrationDate || '',
-        state:            gstData.principalAddress?.state || '',
-        city:             gstData.principalAddress?.district || '',
-        address:          gstData.principalAddress?.completeAddress || gstData.principalAddress?.fullAddress || gstData.address || '',
-        createdAt:        serverTimestamp(),
-        updatedAt:        serverTimestamp(),
-        profileComplete:  Boolean(gstData.gstin),
-        onboardingCompleted: Boolean(gstData.gstin),
-        mobileNumber:     phone,
-        gstOtpVerified:   true,
-      };
-      await setDoc(doc(db, 'users', cred.user.uid), profileData, { merge: true });
-      setProfile(profileData);
-    } catch (e) {
-      console.warn('Direct Firestore profile write failed:', e.message);
-      // Profile can be completed later via /profile/complete
-    }
-
-    // 4. Also call the API for any server-side work (best-effort; failures are non-fatal)
-    try {
-      const token = await cred.user.getIdToken();
-      await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          email,
-          gst: gstData.gstin || '',
-          businessName,
-          legalName:        gstData.legalName || '',
-          tradeName:        gstData.tradeName || '',
-          entityType:       gstData.constitutionOfBusiness || '',
-          gstStatus:        gstData.status || '',
-          registrationDate: gstData.registrationDate || '',
-          address:          gstData.principalAddress?.completeAddress || gstData.principalAddress?.fullAddress || gstData.address || '',
-          state:            gstData.principalAddress?.state || '',
-          city:             gstData.principalAddress?.district || '',
-          natureOfBusiness: gstData.natureOfBusinessActivities || [],
-          mobileNumber:     phone,
-          gstOtpVerified:   true,
-        }),
-      });
-    } catch (e) {
-      console.warn('Register API call failed (non-fatal):', e.message);
-    }
-
-    return cred;
+  /** Request an OTP for a 10-digit Indian mobile number. */
+  const sendOtp = async (phone) => {
+    const res = await fetch('/api/phone-auth/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not send the code.');
+    return data;
   };
 
-  // Logout
+  /**
+   * Verify the OTP. On success the server returns a Firebase custom token which
+   * we exchange for a session. Returns { isNewUser, profileComplete }.
+   */
+  const verifyOtp = async (phone, otp) => {
+    const res = await fetch('/api/phone-auth/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, otp }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Verification failed.');
+    await signInWithCustomToken(auth, data.token);
+    return { isNewUser: Boolean(data.isNewUser), profileComplete: Boolean(data.profileComplete) };
+  };
+
+  // ── Profile completion (EntityLocker) ──────────────────────────────────────
+
+  /** Start an EntityLocker session; returns { authorization_url } to redirect to. */
+  const startEntityLocker = () => authedFetch('/api/kyc/entitylocker/sdk/initiate', {});
+
+  /** Finish onboarding from a completed EntityLocker session, then refresh profile. */
+  const completeProfile = async (sessionId) => {
+    const data = await authedFetch('/api/phone-auth/complete-profile', { session_id: sessionId });
+    if (data.profile) setProfile(data.profile);
+    return data;
+  };
+
   const logout = () => signOut(auth);
 
-  // Reset Password
-  const resetPassword = (email) => sendPasswordResetEmail(auth, email);
-
-  // Check if profile is complete enough to submit reports
-  const isProfileComplete = () => {
-    if (!profile) return false;
-    // GST and businessName are the critical ones for reporting.
-    // Entity type is good to have, but shouldn't block reporting if they've verified GST.
-    const required = ['gst', 'businessName'];
-    return required.every((key) => profile[key] && String(profile[key]).trim() !== '');
-  };
+  /** A profile is complete once business verification has been written by the server. */
+  const isProfileComplete = () =>
+    Boolean(profile?.profileComplete) && Boolean(profile?.gst);
 
   const value = {
     user,
     profile,
     loading: user === undefined,
     profileLoading,
-    login,
-    signup,
-    logout,
-    resetPassword,
+    sendOtp,
+    verifyOtp,
+    startEntityLocker,
+    completeProfile,
     refreshProfile,
+    logout,
     isProfileComplete,
   };
 
