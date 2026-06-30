@@ -7,53 +7,87 @@
     @apply font-sans text-slate-900 antialiased;
   }
 
-  /* Smooth scrolling */
+  /* Headings use the Syne display face for a distinctive, non-generic feel. */
+  h1, h2, h3 {
+    font-family: 'Syne', 'Inter', ui-sans-serif, sans-serif;
+    font-feature-settings: "ss01";
+    letter-spacing: -0.01em;
+  }
+
   html {
     scroll-behavior: smooth;
   }
 
-  /* Better selection color */
+  /* When custom cursor is active (landing page on desktop), hide the default cursor */
+  html.custom-cursor-active,
+  html.custom-cursor-active * {
+    cursor: none !important;
+  }
+
   ::selection {
-    @apply bg-brand-200 text-brand-900;
+    @apply bg-accent-200 text-brand-900;
   }
 }
 
 @layer components {
+  /* Hero / dark sections — cobalt → navy */
   .hero-gradient {
-    @apply bg-gradient-to-br from-slate-900 via-brand-900 to-brand-800;
+    @apply bg-cobalt-night;
+  }
+
+  /* Animated gradient text (cobalt → sky → yellow). Pair with .gradient-flow. */
+  .text-gradient {
+    @apply bg-gradient-text bg-clip-text text-transparent;
+    background-size: 200% auto;
+  }
+  .gradient-flow {
+    animation: gradient-pan 8s ease-in-out infinite;
+  }
+
+  /* Yellow accent CTA */
+  .btn-accent {
+    @apply bg-accent-400 text-brand-950 font-semibold hover:bg-accent-300 transition-all duration-300 shadow-glow-accent;
   }
 }
 
 @layer utilities {
   /* Hidden in public view; visible when pdf-download-mode is active */
-  .pdf-only {
-    display: none;
-  }
-  .pdf-download-mode .pdf-only {
-    display: table-cell;
-  }
+  .pdf-only { display: none; }
+  .pdf-download-mode .pdf-only { display: table-cell; }
 
-  .score-pulse {
-    animation: score-pulse 2s ease-in-out infinite;
-  }
+  .score-pulse { animation: score-pulse 2s ease-in-out infinite; }
+  .animate-in  { animation: animate-in 0.3s ease-out; }
 
-  .animate-in {
-    animation: animate-in 0.3s ease-out;
+  /* Scroll-reveal: start hidden, add .is-visible (via IntersectionObserver) to play */
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @keyframes score-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(30, 64, 175, 0.2); }
-  50%       { box-shadow: 0 0 0 8px rgba(30, 64, 175, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 71, 171, 0.25); }
+  50%       { box-shadow: 0 0 0 8px rgba(0, 71, 171, 0); }
 }
 
 @keyframes animate-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.98);
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Respect users who prefer reduced motion — disable all non-essential motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  .reveal { opacity: 1 !important; transform: none !important; }
 }
