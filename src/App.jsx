@@ -5,7 +5,6 @@ import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import Report from './pages/Report';
 import Login from './pages/Login';
-import Signup from './pages/Signup';
 import ProfileComplete from './pages/ProfileComplete';
 import NotFound from './pages/NotFound';
 import MyTrades from './pages/MyTrades';
@@ -20,7 +19,7 @@ export default function App() {
           <Route path="/dashboard"        element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/report/:gst"      element={<ProtectedRoute><Report /></ProtectedRoute>} />
           <Route path="/login"            element={<Login />} />
-          <Route path="/signup"           element={<Signup />} />
+          <Route path="/signup"           element={<Login />} />
           <Route path="/profile/complete" element={<ProtectedRoute><ProfileComplete /></ProtectedRoute>} />
           <Route path="/my-trades"        element={<ProtectedRoute><MyTrades /></ProtectedRoute>} />
           <Route path="*"                 element={<NotFound />} />

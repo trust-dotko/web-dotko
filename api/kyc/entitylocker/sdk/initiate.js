@@ -1,50 +1,50 @@
+// web/api/kyc/entitylocker/sdk/initiate.js — Vercel Serverless Function
+//
+// Starts an EntityLocker (Sandbox.co.in) verification session for the signed-in
+// user. Requires a valid Firebase ID token, records a session→uid binding so the
+// completion step can verify ownership, and returns ONLY the authorization URL —
+// the Sandbox API key never reaches the browser.
+
+import { db, verifyBearer, clientIp, applySecurityHeaders } from '../../../_firebaseAdmin.js';
 import { rateLimit } from '../../../_rateLimit.js';
 
-// Same Sandbox.co.in platform as GST verification — module-level token cache
 let cachedToken = null;
 let tokenExpiry = null;
 
 async function authenticate(base, apiKey, apiSecret) {
   if (cachedToken && tokenExpiry && Date.now() < tokenExpiry) return cachedToken;
-
-  const res  = await fetch(`${base}/authenticate`, {
+  const res = await fetch(`${base}/authenticate`, {
     method: 'POST',
-    headers: {
-      'x-api-key':     apiKey,
-      'x-api-secret':  apiSecret,
-      'x-api-version': '1.0',
-    },
+    headers: { 'x-api-key': apiKey, 'x-api-secret': apiSecret, 'x-api-version': '1.0' },
   });
   const data = await res.json();
   if (data.code === 200 && data.data?.access_token) {
     cachedToken = data.data.access_token;
-    tokenExpiry = Date.now() + 23 * 3_600_000; // 23-hour cache, matching GST API
+    tokenExpiry = Date.now() + 23 * 3_600_000;
     return cachedToken;
   }
   throw new Error(`Sandbox auth failed (${data.code}): ${data.message || JSON.stringify(data)}`);
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  applySecurityHeaders(res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  if (req.method === 'OPTIONS') { res.status(204).end(); return; }
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  const decoded = await verifyBearer(req);
+  if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
 
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-  const { limited, retryAfter } = rateLimit(ip + '_initiate', 5, 60000);
+  const ip = clientIp(req);
+  const { limited, retryAfter } = rateLimit(`el-initiate:${ip}`, 5, 60_000);
   if (limited) {
-    return res.status(429).json({ error: 'Too many requests', retryAfter });
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
   }
 
-  // Reuse the same Sandbox.co.in credentials already used for GST verification
-  const useTest  = process.env.GST_USE_TEST_API === 'true';
+  const useTest = process.env.GST_USE_TEST_API === 'true';
   const BASE_URL = useTest ? 'https://test-api.sandbox.co.in' : 'https://api.sandbox.co.in';
-  const API_KEY  = useTest ? process.env.GST_TEST_API_KEY  : process.env.GST_API_KEY;
-  const SECRET   = useTest ? process.env.GST_TEST_API_SECRET : process.env.GST_API_SECRET;
+  const API_KEY = useTest ? process.env.GST_TEST_API_KEY : process.env.GST_API_KEY;
+  const SECRET = useTest ? process.env.GST_TEST_API_SECRET : process.env.GST_API_SECRET;
 
   if (!API_KEY || !SECRET) {
     console.error('[entitylocker/initiate] GST_API_KEY / GST_API_SECRET not set');
@@ -53,21 +53,19 @@ export default async function handler(req, res) {
 
   try {
     const token = await authenticate(BASE_URL, API_KEY, SECRET);
-
     const headers = {
-      'Content-Type':  'application/json',
+      'Content-Type': 'application/json',
       'Authorization': token,
-      'x-api-key':     API_KEY,
+      'x-api-key': API_KEY,
       'x-api-version': '1.0.0',
     };
 
-    const origin = req.headers.origin 
+    const origin = req.headers.origin
       || (req.headers.referer ? new URL(req.headers.referer).origin : process.env.ALLOWED_ORIGIN)
       || 'https://web.dotko.in';
-    const redirectUrl = `${origin}/signup?step=3`;
+    // Return to the gated dashboard; the profile-completion gate reads ?session_id
+    const redirectUrl = `${origin}/dashboard`;
 
-    // ── 2. Create EntityLocker session ───────────────────────────────────────
-    // Using standard API endpoint to bypass broken SDK popup
     const initRes = await fetch(`${BASE_URL}/kyc/entitylocker/sessions/init`, {
       method: 'POST',
       headers,
@@ -77,7 +75,6 @@ export default async function handler(req, res) {
         'redirect_url': redirectUrl,
       }),
     });
-    
     const initBody = await initRes.json().catch(() => ({}));
 
     if (!initRes.ok || (initBody.code && initBody.code !== 200)) {
@@ -88,28 +85,20 @@ export default async function handler(req, res) {
     const session_id = initBody.data?.id || initBody.session_id || initBody.data?.session_id;
     const authorization_url = initBody.data?.authorization_url || initBody.authorization_url || initBody.data?.session?.authorization_url;
 
-    if (!session_id) {
-      console.error('[entitylocker/initiate] No session_id in response', initBody);
+    if (!session_id || !authorization_url) {
+      console.error('[entitylocker/initiate] Missing session_id/authorization_url', initBody);
       return res.status(502).json({ error: 'Verification provider returned an unexpected response.' });
     }
 
-    return res.status(200).json({
-      session_id,
-      authorization_url,
-      api_key: API_KEY,
-      brand:   { name: 'Dotko', logo_url: process.env.BRAND_LOGO_URL || 'https://dotko.in/icon.png' },
-      theme:   { mode: 'light' },
+    // Bind this session to the user so completion can verify ownership
+    await db.collection('el_sessions').doc(session_id).set({
+      uid: decoded.uid,
+      createdAt: Date.now(),
     });
+
+    return res.status(200).json({ session_id, authorization_url });
   } catch (err) {
-    console.error('[entitylocker/initiate] Exception:', err.stack);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: err.message,
-      debug: {
-        key_prefix: API_KEY ? API_KEY.substring(0, 15) + '...' : 'none',
-        base_url: BASE_URL,
-        is_test: useTest
-      }
-    });
+    console.error('[entitylocker/initiate] Exception:', err.message);
+    return res.status(500).json({ error: 'Could not start verification. Please try again.' });
   }
 }

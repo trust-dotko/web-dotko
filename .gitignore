@@ -30,3 +30,7 @@ npm-debug.log*
 
 *.mjs
 demo-recording/
+# Dev artifacts & local firebase
+.dev-profiles.json
+.firebase/
+firebase-debug.log*
