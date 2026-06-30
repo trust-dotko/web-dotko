@@ -1,0 +1,393 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   landing.css  —  Dotko Landing Page Animation & Effect Styles
+   Light theme: off-white body, cobalt-sky hero, yellow accent
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Custom Cursor ─────────────────────────────────────────────────────────── */
+.cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  background: #0047ab;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s cubic-bezier(0.22,1,0.36,1),
+              height 0.3s cubic-bezier(0.22,1,0.36,1),
+              background 0.3s ease;
+  mix-blend-mode: difference;
+}
+
+.cursor-outline {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(0, 71, 171, 0.4);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  transition: width 0.35s cubic-bezier(0.22,1,0.36,1),
+              height 0.35s cubic-bezier(0.22,1,0.36,1),
+              border-color 0.3s ease,
+              background 0.3s ease;
+}
+
+.cursor-hover .cursor-dot {
+  width: 50px;
+  height: 50px;
+  background: rgba(0, 71, 171, 0.12);
+  mix-blend-mode: normal;
+}
+
+.cursor-hover .cursor-outline {
+  width: 60px;
+  height: 60px;
+  border-color: rgba(0, 71, 171, 0.6);
+  background: rgba(0, 71, 171, 0.04);
+}
+
+/* Hide custom cursor on touch devices */
+@media (hover: none), (pointer: coarse) {
+  .cursor-dot,
+  .cursor-outline {
+    display: none !important;
+  }
+}
+
+/* ── Hero Gradient (Cobalt Sky — like Kaiko reference) ─────────────────────── */
+.hero-gradient-light {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 0%, rgba(130, 200, 229, 0.5) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 30% 30%, rgba(0, 71, 171, 0.7) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 70% at 70% 40%, rgba(0, 0, 128, 0.5) 0%, transparent 60%),
+    radial-gradient(ellipse 90% 50% at 50% 90%, rgba(130, 200, 229, 0.3) 0%, transparent 50%),
+    linear-gradient(180deg, #0047ab 0%, #1f5fd6 30%, #4d80f0 60%, #82c8e5 100%);
+  animation: heroShift 16s ease-in-out infinite;
+}
+
+@keyframes heroShift {
+  0%, 100% {
+    background-position: 0% 0%, 0% 0%, 100% 0%, 50% 100%, 0% 0%;
+  }
+  50% {
+    background-position: 100% 50%, 50% 50%, 0% 100%, 50% 0%, 0% 0%;
+  }
+}
+
+/* ── Vertical stripe texture overlay (like Kaiko) ──────────────────────────── */
+.hero-stripes {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0px,
+    rgba(255, 255, 255, 0.03) 1px,
+    transparent 1px,
+    transparent 40px
+  );
+  pointer-events: none;
+}
+
+/* ── Glassmorphism Card ────────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.glass-card-white {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+/* ── Light section card (features, testimonials) ───────────────────────────── */
+.light-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: box-shadow 0.4s ease, transform 0.4s ease, border-color 0.4s ease;
+}
+
+.light-card:hover {
+  box-shadow:
+    0 8px 30px rgba(0, 71, 171, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 71, 171, 0.15);
+}
+
+/* ── Animated Border (Conic Gradient) ──────────────────────────────────────── */
+.animated-border {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+}
+
+.animated-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    transparent 40%,
+    rgba(0, 71, 171, 0.5) 50%,
+    rgba(130, 200, 229, 0.6) 55%,
+    rgba(250, 204, 21, 0.5) 60%,
+    transparent 70%
+  );
+  animation: rotateBorder 4s linear infinite;
+  z-index: -1;
+}
+
+@keyframes rotateBorder {
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* ── Color Fill on Scroll ──────────────────────────────────────────────────── */
+.color-fill-text .text-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(110deg, #0047ab 0%, #4d80f0 35%, #82c8e5 60%, #facc15 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  clip-path: inset(0 100% 0 0);
+}
+
+/* ── Card Tilt Effect ──────────────────────────────────────────────────────── */
+.tilt-card {
+  transform-style: preserve-3d;
+  perspective: 1000px;
+  will-change: transform;
+}
+
+.tilt-card-inner {
+  transition: transform 0.1s linear;
+  transform-style: preserve-3d;
+}
+
+.tilt-card .card-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  background: radial-gradient(
+    600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(0, 71, 171, 0.08),
+    transparent 40%
+  );
+}
+
+.tilt-card:hover .card-glow {
+  opacity: 1;
+}
+
+/* ── Stacking Cards ────────────────────────────────────────────────────────── */
+.stack-card {
+  will-change: transform;
+}
+
+/* ── Progress Line ─────────────────────────────────────────────────────────── */
+.progress-line {
+  position: absolute;
+  left: 2rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.progress-line-fill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #facc15, #82c8e5);
+  transform-origin: top;
+  transform: scaleY(0);
+}
+
+/* ── Horizontal Scroll Section ─────────────────────────────────────────────── */
+.h-scroll-track {
+  display: flex;
+  gap: 2rem;
+  will-change: transform;
+}
+
+/* ── Magnetic Button ───────────────────────────────────────────────────────── */
+.magnetic-btn {
+  position: relative;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+/* ── Floating Particles ────────────────────────────────────────────────────── */
+.particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: rgba(0, 71, 171, 0.2);
+  border-radius: 50%;
+  animation: particleFloat var(--duration, 8s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes particleFloat {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.3;
+  }
+  25% {
+    transform: translate(var(--tx1, 30px), var(--ty1, -40px)) scale(1.2);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(var(--tx2, -20px), var(--ty2, -80px)) scale(0.8);
+    opacity: 0.3;
+  }
+  75% {
+    transform: translate(var(--tx3, 40px), var(--ty3, -30px)) scale(1.1);
+    opacity: 0.4;
+  }
+}
+
+/* ── Navbar Landing Variant ────────────────────────────────────────────────── */
+.navbar-landing {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.navbar-landing.navbar-scrolled {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* ── Link Hover Underline Slide ────────────────────────────────────────────── */
+.link-underline {
+  position: relative;
+  display: inline-block;
+}
+
+.link-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.link-underline:hover::after {
+  width: 100%;
+}
+
+/* ── Section separators ────────────────────────────────────────────────────── */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 71, 171, 0.1) 20%, rgba(0, 71, 171, 0.1) 80%, transparent);
+}
+
+/* ── Split text words ──────────────────────────────────────────────────────── */
+.split-word {
+  display: inline-block;
+  overflow: hidden;
+}
+
+.split-word-inner {
+  display: inline-block;
+}
+
+/* ── Testimonial card ──────────────────────────────────────────────────────── */
+.testimonial-card {
+  min-width: 420px;
+  max-width: 480px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .testimonial-card {
+    min-width: 300px;
+    max-width: 340px;
+  }
+}
+
+/* ── Badge pill ────────────────────────────────────────────────────────────── */
+.badge-pill {
+  position: relative;
+  overflow: hidden;
+}
+
+.badge-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.3), rgba(130,200,229,0.4), rgba(255,255,255,0.3));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* ── Stat value ────────────────────────────────────────────────────────────── */
+.stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Respect reduced motion ────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .hero-gradient-light {
+    animation: none !important;
+  }
+  .animated-border::before {
+    animation: none !important;
+  }
+  .particle {
+    animation: none !important;
+  }
+  .cursor-dot,
+  .cursor-outline {
+    display: none !important;
+  }
+  .tilt-card-inner {
+    transition: none !important;
+  }
+}
