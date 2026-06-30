@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { getScoreColor, getRiskLevel } from '../data/trustEngine';
+import { getScoreColor, getTierLabel, getScoreCaption, tierFromScore } from '../data/trustEngine';
 import Badge from './Badge';
 import TrustScoreInfoModal from './TrustScoreInfoModal';
 
-export default function ScoreRing({ score }) {
+export default function ScoreRing({ score, tier }) {
   const [showInfo, setShowInfo] = useState(false);
 
-  const isNA   = score === null;
-  const risk   = isNA ? null : getRiskLevel(score);
-  const color  = isNA ? '#94a3b8' : getScoreColor(score); // slate-400 for N/A
-  const radius = 54;
+  const isNA      = score === null;
+  // Prefer the engine-provided tier (carries the trade-driven Critical state);
+  // fall back to score-derived tier for callers that don't pass it.
+  const effTier   = isNA ? 'inactive' : (tier || tierFromScore(score));
+  const label     = getTierLabel(effTier);
+  const color     = getScoreColor(score, effTier);
+  const radius     = 54;
   const circ   = 2 * Math.PI * radius;
   const dash   = isNA ? circ : circ - (score / 100) * circ;
 
@@ -52,14 +55,10 @@ export default function ScoreRing({ score }) {
           </div>
         </div>
 
-        {isNA ? (
-          <Badge label="Inactive" size="lg" />
-        ) : (
-          <Badge label={risk} size="lg" />
-        )}
+        <Badge label={isNA ? 'Inactive' : label} size="lg" />
 
         <p className="text-xs text-slate-500">
-          {isNA ? 'Trust Score · Not Available' : `Trust Score · ${risk} Risk · out of 100`}
+          {getScoreCaption(effTier)}
         </p>
 
         <button

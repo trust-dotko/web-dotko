@@ -1,32 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertTriangle, Loader2, Upload, FileText, Image, Trash2 } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, Loader2, Upload, FileText, Image, Trash2, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { db, storage } from '../config/firebase';
+import { db } from '../config/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { formatCurrency, formatDate } from '../data/trustEngine';
-
-const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-const MAX_FILE_SIZE  = 10 * 1024 * 1024;
-
-function sanitizeFilename(name) {
-  const dot  = name.lastIndexOf('.');
-  const base = dot > 0 ? name.slice(0, dot) : name;
-  const ext  = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
-  return ext ? `${base.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)}.${ext}` : base.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
-}
-
-async function uploadProof(file, userId) {
-  const filename  = `${Date.now()}_${sanitizeFilename(file.name)}`;
-  const storageRef = ref(storage, `trade-disputes/${userId}/${filename}`);
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
-    task.on('state_changed', null, reject, async () => {
-      try { resolve(await getDownloadURL(task.snapshot.ref)); }
-      catch (e) { reject(e); }
-    });
-  });
-}
+import { formatCurrency, formatDate, appealDaysLeft } from '../data/trustEngine';
+import { uploadTradeFile, ACCEPTED_TYPES, MAX_FILE_SIZE } from '../utils/fileUpload';
 
 function TradeCard({ trade, companyGSTIN, onDone }) {
   const { user } = useAuth();
@@ -67,20 +45,22 @@ function TradeCard({ trade, companyGSTIN, onDone }) {
     }
   };
 
-  const dispute = async () => {
-    if (!notes.trim()) { setError('Please describe the dispute.'); return; }
+  const appeal = async () => {
+    if (!notes.trim()) { setError('Please describe your appeal.'); return; }
     setLoading(true);
     setError('');
     try {
-      const token     = await user.getIdToken();
+      const getToken  = () => user.getIdToken();
       const proofUrls = [];
       for (const f of files) {
-        proofUrls.push(await uploadProof(f, user.uid));
+        const { path } = await uploadTradeFile(f, getToken);
+        proofUrls.push(path);
       }
+      const token = await getToken();
       const res = await fetch('/api/trade/verify', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body:    JSON.stringify({ tradeId: trade.id, companyGSTIN, action: 'dispute', notes: notes.trim(), proofUrls }),
+        body:    JSON.stringify({ tradeId: trade.id, companyGSTIN, action: 'appeal', notes: notes.trim(), proofUrls }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
       setDone(true);
@@ -122,10 +102,15 @@ function TradeCard({ trade, companyGSTIN, onDone }) {
           <p className="text-slate-700">{dueDate}</p>
         </div>
       </div>
-      <div className="text-xs mb-1">
+      <div className="text-xs mb-1 flex items-center gap-2 flex-wrap">
         <span className="text-slate-400">Status filed: </span>
         <span className="font-medium text-slate-700">{trade.status}</span>
-        {trade.tradeType && <span className="ml-2 text-slate-400">· {trade.tradeType}</span>}
+        {trade.tradeType && <span className="text-slate-400">· {trade.tradeType}</span>}
+        {appealDaysLeft(trade) != null && (
+          <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+            <Clock className="w-3 h-3" /> {appealDaysLeft(trade)} day{appealDaysLeft(trade) === 1 ? '' : 's'} left to respond
+          </span>
+        )}
       </div>
 
       {!mode && (
@@ -136,26 +121,26 @@ function TradeCard({ trade, companyGSTIN, onDone }) {
             className="flex items-center gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
           >
             {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-            Confirm Trade
+            Confirm
           </button>
           <button
-            onClick={() => setMode('dispute')}
-            className="flex items-center gap-1.5 text-xs font-semibold border border-red-200 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+            onClick={() => setMode('appeal')}
+            className="flex items-center gap-1.5 text-xs font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
           >
-            <AlertTriangle className="w-3 h-3" /> Dispute
+            <AlertTriangle className="w-3 h-3" /> Appeal
           </button>
         </div>
       )}
 
-      {mode === 'dispute' && (
-        <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 space-y-2">
-          <p className="text-xs font-semibold text-red-700">Describe the dispute</p>
+      {mode === 'appeal' && (
+        <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-700">Appeal this report — explain & attach proof</p>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={3}
-            placeholder="e.g. Payment was made on time. Invoice amount is incorrect."
-            className="w-full text-xs px-3 py-2 rounded-lg border border-red-200 focus:outline-none focus:ring-2 focus:ring-red-300 bg-white resize-none"
+            placeholder="e.g. Payment was made on time via NEFT on 12 May. Attaching bank statement & signed ledger."
+            className="w-full text-xs px-3 py-2 rounded-lg border border-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white resize-none"
           />
           <div>
             <p className="text-xs text-slate-500 mb-1">Attach proof (optional · PDF, JPG, PNG)</p>
@@ -180,12 +165,12 @@ function TradeCard({ trade, companyGSTIN, onDone }) {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={dispute}
+              onClick={appeal}
               disabled={loading}
-              className="flex items-center gap-1.5 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+              className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
             >
               {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-              Submit Dispute
+              Submit Appeal
             </button>
             <button onClick={() => { setMode(null); setError(''); }} className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5">
               Cancel
@@ -235,7 +220,7 @@ export default function TradeVerificationModal({ userGSTIN, onClose }) {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="font-semibold text-slate-900">Trades Filed Against You</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Review each trade and confirm or dispute within 7 days.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Review each trade and confirm or appeal within 7 days.</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
             <X className="w-4 h-4 text-slate-500" />

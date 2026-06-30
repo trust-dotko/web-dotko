@@ -78,6 +78,7 @@ export default function CTASection() {
   // Magnetic button effect
   const handleMagnetic = useCallback((e) => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (window.matchMedia('(hover: none)').matches) return; // Disable on touch screens to prevent jumpy behavior on tap
     const btn = e.currentTarget;
     const rect = btn.getBoundingClientRect();
     const x = e.clientX - rect.left - rect.width / 2;

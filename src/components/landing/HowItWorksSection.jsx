@@ -30,25 +30,32 @@ export default function HowItWorksSection() {
   const progressFillRef = useRef(null);
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     if (!sectionRef.current || !cardsContainerRef.current) return;
+    
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isMobile = window.innerWidth < 640;
 
     const ctx = gsap.context(() => {
       // Heading reveal
-      gsap.fromTo(
-        headingRef.current,
-        { y: 40, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
-          duration: 0.8,
-          ease: 'power3.out',
-          scrollTrigger: {
-            trigger: headingRef.current,
-            start: 'top 80%',
-          },
-        }
-      );
+      if (!prefersReducedMotion) {
+        gsap.fromTo(
+          headingRef.current,
+          { y: 40, opacity: 0 },
+          {
+            y: 0,
+            opacity: 1,
+            duration: 0.8,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: headingRef.current,
+              start: 'top 80%',
+            },
+          }
+        );
+      }
+
+      // Skip pinning, stacking, and progress line fill on mobile or reduced motion
+      if (prefersReducedMotion || isMobile) return;
 
       const cards = cardsContainerRef.current.querySelectorAll('.stack-card');
       const totalCards = cards.length;

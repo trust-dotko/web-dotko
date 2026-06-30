@@ -372,6 +372,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Hide scrollbars ───────────────────────────────────────────────────────── */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
 /* ── Respect reduced motion ────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .hero-gradient-light {

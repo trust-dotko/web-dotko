@@ -36,23 +36,13 @@ export default function Navbar() {
     navigate('/login', { replace: true });
   };
 
-  // Landing: transparent over hero → frosted white on scroll
-  const navClasses = isLanding
-    ? `sticky top-0 z-50 transition-all duration-500 navbar-landing ${scrolled ? 'navbar-scrolled' : ''}`
-    : 'sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm';
+  // Navbar styling: frosted white background with subtle border and shadow for premium feel
+  const navClasses = 'sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm';
 
-  // Text colors: white on hero, slate when scrolled or on other pages
-  const linkTextClass = isLanding && !scrolled
-    ? 'text-white/80 hover:text-white'
-    : 'text-slate-600 hover:text-brand-800';
-
-  const logoTextClass = isLanding && !scrolled
-    ? 'font-display font-bold text-white text-base tracking-tight'
-    : 'font-display font-bold text-brand-700 text-base tracking-tight';
-
-  const subtitleClass = isLanding && !scrolled
-    ? 'hidden sm:inline-block text-xs text-white/50 ml-2'
-    : 'hidden sm:inline-block text-xs text-slate-400 ml-2';
+  // Text colors: slate for links and dark brand color for the logo
+  const linkTextClass = 'text-slate-600 hover:text-brand-800';
+  const logoTextClass = 'font-display font-bold text-brand-700 text-base tracking-tight';
+  const subtitleClass = 'hidden sm:inline-block text-xs text-slate-400 ml-2';
 
   return (
     <nav className={navClasses}>
@@ -111,11 +101,7 @@ export default function Navbar() {
               </button>
               <button
                 onClick={handleLogout}
-                className={`inline-flex items-center gap-1.5 text-sm transition-colors px-3 py-1.5 rounded-lg ${
-                  isLanding && !scrolled
-                    ? 'text-white/70 hover:text-red-300 hover:bg-red-400/10'
-                    : 'text-slate-600 hover:text-red-600 hover:bg-red-50'
-                }`}
+                className="inline-flex items-center gap-1.5 text-sm transition-colors px-3 py-1.5 rounded-lg text-slate-600 hover:text-red-600 hover:bg-red-50"
               >
                 <LogOut className="w-4 h-4" />
                 <span className="hidden sm:inline">Logout</span>

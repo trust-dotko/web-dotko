@@ -7,8 +7,9 @@ import TradeTable from '../components/TradeTable';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import SubmitTradeModal from '../components/SubmitTradeModal';
-import { calculateTrustScore, getRiskLevel, getRiskHeadline, getTrustPhrase, getRiskColors, formatCurrency } from '../data/trustEngine';
+import { calculateTrustScore, getTierLabel, getRiskHeadline, getTrustPhrase, getRiskColors, formatCurrency, getTradeAmount, isPaidResolved, isLatePartial, isDefault } from '../data/trustEngine';
 import { db } from '../config/firebase';
+import { getCached, setCached, TTL } from '../utils/cache';
 import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 
 export default function Report() {
@@ -20,12 +21,15 @@ export default function Report() {
   const [trades,     setTrades]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [notFound,   setNotFound]   = useState(false);
-  const [showModal,  setShowModal]  = useState(false);
+  const [modalMode,  setModalMode]  = useState(null); // null | 'trade' | 'report'
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setNotFound(false);
+      // Instant first paint from cached company metadata (refreshed below).
+      const cachedBiz = getCached(`company:${gst}`);
+      if (cachedBiz) setBusiness(cachedBiz);
       try {
         // 1. Try Firestore
         let bizSnap;
@@ -36,7 +40,11 @@ export default function Report() {
         }
 
         if (bizSnap?.exists()) {
-          setBusiness({ gst, ...bizSnap.data() });
+          const biz = { gst, ...bizSnap.data() };
+          setBusiness(biz);
+          // Cache the rarely-changing company metadata (NOT trades/score) for
+          // instant back/forward nav and to trim Firestore reads.
+          setCached(`company:${gst}`, biz, TTL.COMPANY);
         } else {
           // 2. Fall back to GST API data passed via router state
           const gstData = location.state?.gstData;
@@ -76,7 +84,7 @@ export default function Report() {
     load();
   }, [gst]);
 
-  const { score, autoFlagged } = useMemo(
+  const { score, autoFlagged, tier, critical } = useMemo(
     () => calculateTrustScore(trades, {
       status:            business?.status,
       incorporated:      business?.incorporated,
@@ -92,16 +100,15 @@ export default function Report() {
     }),
     [trades, business]
   );
-  const risk     = useMemo(() => getRiskLevel(score),      [score]);
-  const headline = useMemo(() => getRiskHeadline(risk),    [risk]);
-  const phrase   = useMemo(() => getTrustPhrase(score),    [score]);
-  const riskColors = useMemo(() => getRiskColors(risk),    [risk]);
+  const riskLabel  = useMemo(() => getTierLabel(tier),       [tier]);
+  const headline   = useMemo(() => getRiskHeadline(tier),    [tier]);
+  const phrase     = useMemo(() => getTrustPhrase(score, tier), [score, tier]);
+  const riskColors = useMemo(() => getRiskColors(tier),      [tier]);
 
-  const paid        = trades.filter(t => t.status === 'Paid' || t.status === 'Paid on Time' || t.status === 'Paid Late').length;
-  const delayed     = trades.filter(t => t.status === 'Delayed' || t.status === 'Paid Late' || t.status === 'Partially Paid').length;
-  const unpaid      = trades.filter(t => t.status === 'Unpaid' || t.status === 'Default/Written Off').length;
-  const defaulted   = trades.filter(t => t.status === 'Default/Written Off' || t.status === 'Unpaid').length;
-  const totalVolume = trades.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const paid        = trades.filter(t => isPaidResolved(t.status)).length;
+  const delayed     = trades.filter(t => isLatePartial(t.status)).length;
+  const defaulted   = trades.filter(t => isDefault(t.status)).length;
+  const totalVolume = trades.reduce((sum, t) => sum + getTradeAmount(t), 0);
 
   // Called by SubmitTradeModal after a successful API submission
   const handleTradeSuccess = (newTrade) => {
@@ -189,7 +196,7 @@ export default function Report() {
         {/* Header card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-start gap-6">
-            <ScoreRing score={score} />
+            <ScoreRing score={score} tier={tier} />
             <div className="flex-1">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -205,7 +212,7 @@ export default function Report() {
                     <Download className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Download</span>
                   </button>
-                  <Badge label={risk} size="lg" />
+                  <Badge label={riskLabel} size="lg" />
                 </div>
               </div>
               <div className="mt-4 grid sm:grid-cols-2 gap-2 text-sm">
@@ -239,6 +246,11 @@ export default function Report() {
                     {headline}
                   </p>
                   <p className={`text-sm ${riskColors.text}`}>{phrase}</p>
+                  {critical && (
+                    <p className="text-xs text-red-700 font-semibold mt-1">
+                      ⚠ Critical: an unresolved payment default is on record under this GSTIN.
+                    </p>
+                  )}
                   {autoFlagged && (
                     <p className="text-xs text-red-600 font-medium mt-1">
                       ⚠ Auto-flagged: 6 or more negative trades on record.
@@ -260,28 +272,37 @@ export default function Report() {
 
         {/* Trade history */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="font-semibold text-slate-900">Trade History</h2>
-            <button
-              id="submit-trade-btn"
-              data-html2canvas-ignore="true"
-              onClick={() => setShowModal(true)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-brand-800 hover:bg-brand-700 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> Submit Trade
-            </button>
+            <div className="flex items-center gap-2" data-html2canvas-ignore="true">
+              <button
+                id="submit-trade-btn"
+                onClick={() => setModalMode('trade')}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-brand-800 hover:bg-brand-700 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Submit a Trade
+              </button>
+              <button
+                id="report-default-btn"
+                onClick={() => setModalMode('report')}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-red-700 border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" /> Report a Default
+              </button>
+            </div>
           </div>
-          <TradeTable trades={trades} />
+          <TradeTable trades={trades} score={score} />
         </div>
 
 
       </main>
 
-      {showModal && business && (
+      {modalMode && business && (
         <SubmitTradeModal
           gst={gst}
           businessName={business.name}
-          onClose={() => setShowModal(false)}
+          mode={modalMode}
+          onClose={() => setModalMode(null)}
           onSuccess={handleTradeSuccess}
         />
       )}
