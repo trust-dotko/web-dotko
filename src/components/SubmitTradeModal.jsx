@@ -1,33 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, CheckCircle2, Loader2, Search, Lock, Upload, FileText, Image, Trash2, Paperclip } from 'lucide-react';
+import { X, CheckCircle2, Loader2, Search, Lock, Upload, FileText, Image, Trash2, Paperclip, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ProfileGuard from './ProfileGuard';
-import { TRADE_STATUSES, isValidGST, mapTradeStatusToReportStatus, mapTradeTypeToComplaintType } from '../data/trustEngine';
-import { db, storage } from '../config/firebase';
-import {
-  collection, addDoc, doc, setDoc, serverTimestamp,
-} from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { TRADE_STATUSES, isValidGST } from '../data/trustEngine';
+import { uploadTradeFile, ACCEPTED_TYPES, MAX_FILE_SIZE, MAX_FILES } from '../utils/fileUpload';
 
 const TRADE_TYPES = ['Sale', 'Purchase', 'Service Provided', 'Service Received'];
+
+// Status options differ by mode: a "trade" is a routine record; a "report" is a
+// payment default that opens the 7-day appeal window.
+const REPORT_STATUS = 'Default/Written Off';
+const TRADE_STATUS_OPTIONS = ['Paid on Time', 'Paid Late', 'Partially Paid', 'Still Pending'];
 
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
-
-const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-const MAX_FILE_SIZE  = 10 * 1024 * 1024; // 10 MB
-
-/** Sanitize filename for Firebase Storage — strip special chars, keep extension */
-function sanitizeFilename(name) {
-  const dot = name.lastIndexOf('.');
-  const base = dot > 0 ? name.slice(0, dot) : name;
-  const ext  = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
-  const clean = base.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
-  return ext ? `${clean}.${ext}` : clean;
-}
 
 /** Compute payment due date from invoiceDate + creditPeriod days */
 function calcDueDate(invoiceDate, creditPeriod) {
@@ -137,23 +126,11 @@ function FileChip({ file, onRemove }) {
   );
 }
 
-/** Upload a single file directly to Firebase Storage, returns download URL */
-async function uploadFile(file, userId) {
-  const filename = `${Date.now()}_${sanitizeFilename(file.name)}`;
-  const storageRef = ref(storage, `trade-invoices/${userId}/${filename}`);
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
-    task.on('state_changed', null, reject, async () => {
-      try { resolve(await getDownloadURL(task.snapshot.ref)); }
-      catch (e) { reject(e); }
-    });
-  });
-}
-
-export default function SubmitTradeModal({ gst: prefilledGST, businessName: prefilledName, onClose, onSuccess }) {
+export default function SubmitTradeModal({ gst: prefilledGST, businessName: prefilledName, mode = 'trade', onClose, onSuccess }) {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
+  const isReport = mode === 'report';
   const isLocked = Boolean(prefilledGST);
 
   const [form, setForm] = useState({
@@ -165,7 +142,7 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
     creditPeriod:      '',
     invoiceDate:       '',
     paymentDueDate:    '',
-    status:            'Still Pending',
+    status:            isReport ? REPORT_STATUS : 'Still Pending',
   });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
@@ -217,11 +194,13 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
     const fileErr = [];
     const valid = Array.from(incoming).filter(f => {
       if (!ACCEPTED_TYPES.includes(f.type)) { fileErr.push(`${f.name}: only PDF, JPG, PNG allowed`); return false; }
-      if (f.size > MAX_FILE_SIZE)            { fileErr.push(`${f.name}: exceeds 10 MB limit`);        return false; }
+      if (f.size > MAX_FILE_SIZE)            { fileErr.push(`${f.name}: exceeds 3 MB limit`);         return false; }
       return true;
     });
+    const next = [...existing, ...valid].slice(0, MAX_FILES);
+    if (next.length < existing.length + valid.length) fileErr.push(`Max ${MAX_FILES} files`);
     if (fileErr.length) setErrors(e => ({ ...e, files: fileErr.join(' · ') }));
-    setter([...existing, ...valid]);
+    setter(next);
   };
 
   const validate = () => {
@@ -241,106 +220,64 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
+    // A default report requires at least one piece of evidence.
+    if (isReport && invoiceFiles.length === 0 && ledgerFiles.length === 0) {
+      setErrors(e => ({ ...e, files: 'Attach an invoice or ledger as proof of the default.' }));
+      return;
+    }
+
     setLoading(true);
     try {
-      // 1. Upload files first
+      const getToken = () => user.getIdToken();
+
+      // 1. Upload files through the authenticated proxy (returns storage paths + hashes)
       const allFiles = [
         ...invoiceFiles.map(f => ({ file: f, category: 'invoice' })),
         ...ledgerFiles .map(f => ({ file: f, category: 'ledger'  })),
       ];
       const invoiceUrls = [];
       const ledgerUrls  = [];
+      const fileHashes  = [];
 
       for (let i = 0; i < allFiles.length; i++) {
         const { file, category } = allFiles[i];
         setUploadStatus(`Uploading ${i + 1}/${allFiles.length}: ${file.name}…`);
-        const url = await uploadFile(file, user.uid);
-        if (category === 'invoice') invoiceUrls.push(url);
-        else                        ledgerUrls .push(url);
+        const { path, hash } = await uploadTradeFile(file, getToken);
+        if (category === 'invoice') invoiceUrls.push(path);
+        else                        ledgerUrls.push(path);
+        fileHashes.push(hash);
       }
-      if (allFiles.length) setUploadStatus('Saving trade…');
+      setUploadStatus('Saving…');
 
-      const cleanGSTIN   = form.counterpartyGSTIN.trim().toUpperCase();
-      const verificationDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-      const tradePayload = {
-        counterpartyGSTIN:    cleanGSTIN,
-        counterpartyName:     form.counterpartyName.trim(),
-        tradeType:            form.tradeType,
-        invoiceNumber:        form.invoiceNumber.trim(),
-        tradeValue:           Number(form.tradeValue),
-        creditPeriod:         Number(form.creditPeriod),
-        invoiceDate:          form.invoiceDate,
-        paymentDueDate:       form.paymentDueDate,
-        status:               form.status,
-        submittedBy:          user.uid,
-        submitterGSTIN:       (profile?.gst || '').trim().toUpperCase(),
-        submitterName:        (profile?.businessName || profile?.legalName || '').trim(),
-        invoiceUrls,
-        ledgerUrls,
-        verificationStatus:   'pending_verification',
-        verificationDeadline,
-        verificationResponse: null,
-        createdAt:            serverTimestamp(),
-        updatedAt:            serverTimestamp(),
-      };
-
-      // 2. Write trade to company subcollection
-      const tradeRef = await addDoc(collection(db, 'companies', cleanGSTIN, 'trades'), tradePayload);
-
-      // 3. Ensure company doc exists
-      await setDoc(doc(db, 'companies', cleanGSTIN),
-        { gst: cleanGSTIN, name: tradePayload.counterpartyName, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-
-      // 4. Mirror to user's submittedTrades
-      await setDoc(
-        doc(db, 'users', user.uid, 'submittedTrades', tradeRef.id),
-        { ...tradePayload, companyTradeId: tradeRef.id }
-      );
-
-       // 5. Fire-and-forget notification
-       user.getIdToken().then(token =>
-         fetch('/api/trade/submit', {
-           method:  'POST',
-           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-           body:    JSON.stringify({ ...tradePayload, tradeId: tradeRef.id }),
-         })
-       ).catch(() => {});
-       
-       // 6. Double-write to top-level /reports/ collection for admin portal visibility
-       try {
-         const reportPayload = {
-           customerName: tradePayload.counterpartyName,
-           customerGSTIN: tradePayload.counterpartyGSTIN,
-           supplierBusinessName: tradePayload.submitterName,
-           supplierId: user.uid,
-           amount: tradePayload.tradeValue,
-           invoiceNumber: tradePayload.invoiceNumber,
-           status: mapTradeStatusToReportStatus(tradePayload.status),
-           typeOfComplaint: mapTradeTypeToComplaintType(tradePayload.tradeType),
-           ratings: {
-            overall: 5,
-            paymentTimeliness: 5,
-            communication: 5,
-            contractFulfilment: 5
-           },
-           createdAt: serverTimestamp(),
-           updatedAt: serverTimestamp(),
-           // Note: customerEmail, customerWhatsapp, whatsappMessageSent, and whatsappMessageSentAt
-           // are not available in the trade submission flow, so they're omitted
-         };
-         
-         await addDoc(collection(db, 'reports'), reportPayload);
-       } catch (reportError) {
-         console.warn('Failed to write report to top-level collection:', reportError);
-         // Non-fatal - the trade is still recorded in the company subcollection
-       }
+      // 2. Submit through the authoritative server endpoint (it writes all docs).
+      const token = await getToken();
+      const res = await fetch('/api/trade', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          action:            'submit',
+          counterpartyGSTIN: form.counterpartyGSTIN.trim().toUpperCase(),
+          counterpartyName:  form.counterpartyName.trim(),
+          tradeType:         form.tradeType,
+          invoiceNumber:     form.invoiceNumber.trim(),
+          tradeValue:        Number(form.tradeValue),
+          creditPeriod:      Number(form.creditPeriod),
+          invoiceDate:       form.invoiceDate,
+          paymentDueDate:    form.paymentDueDate,
+          status:            form.status,
+          invoiceUrls,
+          ledgerUrls,
+          fileHashes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || (data.fields ? Object.values(data.fields)[0] : 'Submission failed'));
+      }
 
       setSuccess(true);
       setTimeout(() => {
-        onSuccess?.({ id: tradeRef.id, ...tradePayload });
+        onSuccess?.(data.trade);
         onClose();
       }, 1200);
     } catch (err) {
@@ -361,9 +298,13 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h2 className="font-semibold text-slate-900">Submit Trade Report</h2>
+            <h2 className="font-semibold text-slate-900">
+              {isReport ? 'Report a Default' : 'Submit a Trade'}
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Report a trade against {isLocked ? <span className="font-mono">{prefilledGST}</span> : 'a business'}
+              {isReport
+                ? <>Report non-payment by {isLocked ? <span className="font-mono">{prefilledGST}</span> : 'a business'} · opens a 7-day appeal window</>
+                : <>Record a trade you did with {isLocked ? <span className="font-mono">{prefilledGST}</span> : 'a business'}</>}
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
@@ -472,18 +413,24 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
               {/* Status */}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Current Status</label>
-                <select value={form.status} onChange={e => set('status', e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white ${errors.status ? 'border-red-300' : 'border-slate-200'}`}
-                >
-                  {TRADE_STATUSES.map(s => <option key={s}>{s}</option>)}
-                </select>
+                {isReport ? (
+                  <div className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700 font-medium">
+                    <AlertTriangle className="w-4 h-4" /> Default / Written Off
+                  </div>
+                ) : (
+                  <select value={form.status} onChange={e => set('status', e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white ${errors.status ? 'border-red-300' : 'border-slate-200'}`}
+                  >
+                    {TRADE_STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+                  </select>
+                )}
                 {errors.status && <p className="text-red-600 text-xs mt-1">{errors.status}</p>}
               </div>
 
               {/* ── File Attachments ── */}
               <div className="border-t border-slate-100 pt-4 space-y-3">
                 <p className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                  <Paperclip className="w-3.5 h-3.5" /> Attach Documents <span className="font-normal text-slate-400">(optional · PDF, JPG, PNG · max 10 MB each)</span>
+                  <Paperclip className="w-3.5 h-3.5" /> Attach Documents <span className="font-normal text-slate-400">(optional · PDF, JPG, PNG · max 3 MB each)</span>
                 </p>
 
                 {/* Invoice Copies */}
@@ -558,10 +505,10 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-brand-800 text-white font-semibold py-2.5 rounded-lg hover:bg-brand-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                className={`w-full text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60 ${isReport ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-800 hover:bg-brand-700'}`}
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? (uploadStatus || 'Submitting…') : 'Submit Trade Report'}
+                {loading ? (uploadStatus || 'Submitting…') : (isReport ? 'File Default Report' : 'Submit Trade')}
               </button>
             </form>
           )}

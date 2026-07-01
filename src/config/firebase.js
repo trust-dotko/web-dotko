@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getCached, setCached, TTL } from '../utils/cache';
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -26,6 +27,12 @@ export const storage = getStorage(app);
  * GST API secrets stay server-side only — never exposed to the browser.
  */
 export async function verifyGSTIN(gstin) {
+  const cacheKey = `gst:${String(gstin || '').trim().toUpperCase()}`;
+  // Registry data changes rarely — serve a recent successful lookup from cache
+  // to cut latency and GST-API/function cost (non-critical, read-only data).
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   const res = await fetch('/api/gst-verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -46,5 +53,6 @@ export async function verifyGSTIN(gstin) {
     throw new Error(data.error || 'GST verification failed');
   }
 
+  setCached(cacheKey, data, TTL.GST_LOOKUP);
   return data;
 }

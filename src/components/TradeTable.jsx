@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatCurrency, formatDate } from '../data/trustEngine';
+import { formatCurrency, formatDate, getBaseScoreNote, getTradeAmount } from '../data/trustEngine';
 import { AlertTriangle } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -65,13 +65,13 @@ function resolveVerificationStatus(trade) {
 const PUBLIC_HEADERS  = ['Reported By', 'Amount', 'Invoice Date', 'Due Date', 'Days Due', 'Remark'];
 const PDF_ONLY_HEADER = 'Invoice No.';
 
-export default function TradeTable({ trades }) {
+export default function TradeTable({ trades, score }) {
   if (!trades || trades.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-slate-400">
         <AlertTriangle className="w-8 h-8 mb-3 text-amber-400" />
         <p className="font-medium text-slate-500">No trade records found</p>
-        <p className="text-sm mt-1">Score defaulted to 50 due to no trade history</p>
+        <p className="text-sm mt-1">{getBaseScoreNote(score)}</p>
       </div>
     );
   }
@@ -95,7 +95,7 @@ export default function TradeTable({ trades }) {
           {trades.map(trade => {
             const partyName   = trade.submitterName  || trade.buyer || '—';
             const partyGSTIN  = trade.submitterGSTIN || null;
-            const amount      = trade.tradeValue ?? trade.amount ?? 0;
+            const amount      = getTradeAmount(trade);
             const invoiceDate = trade.invoiceDate || null;
             const dueDate     = trade.paymentDueDate || null;
             const daysDue     = getDaysDue(trade);

@@ -1,23 +1,33 @@
 import React from 'react';
 
 const variants = {
-  Paid:    'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  Delayed: 'bg-amber-50  text-amber-700   border border-amber-200',
-  Unpaid:  'bg-red-50    text-red-700     border border-red-200',
-  Low:     'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  Medium:  'bg-amber-50  text-amber-700   border border-amber-200',
-  High:    'bg-red-50    text-red-700     border border-red-200',
-  default: 'bg-slate-100 text-slate-600   border border-slate-200',
+  Paid:           'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  Delayed:        'bg-amber-50  text-amber-700   border border-amber-200',
+  Unpaid:         'bg-red-50    text-red-700     border border-red-200',
+  Low:            'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  Medium:         'bg-amber-50  text-amber-700   border border-amber-200',
+  High:           'bg-red-50    text-red-700     border border-red-200',
+  'Low Risk':     'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  'Medium Risk':  'bg-amber-50  text-amber-700   border border-amber-200',
+  'High Risk':    'bg-red-50    text-red-700     border border-red-200',
+  Critical:       'bg-red-100   text-red-900     border border-red-300',
+  Inactive:       'bg-slate-100 text-slate-600   border border-slate-200',
+  default:        'bg-slate-100 text-slate-600   border border-slate-200',
 };
 
 const dots = {
-  Paid:    'bg-emerald-500',
-  Delayed: 'bg-amber-500',
-  Unpaid:  'bg-red-500',
-  Low:     'bg-emerald-500',
-  Medium:  'bg-amber-500',
-  High:    'bg-red-500',
-  default: 'bg-slate-400',
+  Paid:           'bg-emerald-500',
+  Delayed:        'bg-amber-500',
+  Unpaid:         'bg-red-500',
+  Low:            'bg-emerald-500',
+  Medium:         'bg-amber-500',
+  High:           'bg-red-500',
+  'Low Risk':     'bg-emerald-500',
+  'Medium Risk':  'bg-amber-500',
+  'High Risk':    'bg-red-500',
+  Critical:       'bg-red-800',
+  Inactive:       'bg-slate-400',
+  default:        'bg-slate-400',
 };
 
 export default function Badge({ label, showDot = true, size = 'sm' }) {

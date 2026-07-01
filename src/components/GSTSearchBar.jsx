@@ -93,12 +93,12 @@ export default function GSTSearchBar({ large = false, placeholder = 'Enter GSTIN
   };
 
   const inputCls = large
-    ? 'flex-1 text-base px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 placeholder-slate-400'
-    : 'flex-1 text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 placeholder-slate-400';
+    ? 'flex-1 min-w-0 text-base px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 placeholder-slate-400'
+    : 'flex-1 min-w-0 text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 placeholder-slate-400';
 
   const btnCls = large
-    ? 'bg-brand-800 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition-colors flex items-center gap-2 disabled:opacity-60'
-    : 'bg-brand-800 text-white font-medium px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 disabled:opacity-60';
+    ? 'shrink-0 bg-brand-800 text-white font-semibold px-4 sm:px-6 py-3 rounded-xl hover:bg-brand-700 transition-colors flex items-center gap-2 disabled:opacity-60'
+    : 'shrink-0 bg-brand-800 text-white font-medium px-4 py-2 rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 disabled:opacity-60';
 
   return (
     <div className="w-full">

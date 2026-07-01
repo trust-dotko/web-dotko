@@ -24,6 +24,7 @@ export default function Login() {
   const otpRef = useRef(null);
 
   const destination = location.state?.from?.pathname || location.state?.from || '/dashboard';
+  const isSignup = location.pathname === '/signup';
 
   // Resend cooldown ticker
   useEffect(() => {
@@ -76,12 +77,16 @@ export default function Login() {
         <div className="text-center mb-8">
           <img src="/icon.png" alt="Dotko" className="w-12 h-12 rounded-2xl mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-slate-900">
-            {stage === 'phone' ? 'Sign in to Dotko' : 'Enter the code'}
+            {stage === 'otp'
+              ? 'Enter the code'
+              : isSignup ? 'Create your account' : 'Sign in to Dotko'}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {stage === 'phone'
-              ? 'We’ll send a one-time code to your WhatsApp'
-              : `Sent to +91 ${cleanPhone} on WhatsApp`}
+            {stage === 'otp'
+              ? `Sent to +91 ${cleanPhone} on WhatsApp`
+              : isSignup
+                ? 'Sign up with your mobile — we’ll send a one-time WhatsApp code'
+                : 'We’ll send a one-time code to your WhatsApp'}
           </p>
         </div>
 
@@ -169,6 +174,20 @@ export default function Login() {
             </form>
           )}
         </div>
+
+        {stage === 'phone' && (
+          <p className="text-center text-sm text-slate-500 mt-5">
+            {isSignup ? (
+              <>Already have an account?{' '}
+                <Link to="/login" className="text-brand-700 font-semibold hover:underline">Sign in</Link>
+              </>
+            ) : (
+              <>New to Dotko?{' '}
+                <Link to="/signup" className="text-brand-700 font-semibold hover:underline">Create an account</Link>
+              </>
+            )}
+          </p>
+        )}
 
         <p className="text-center text-xs text-slate-400 mt-6">
           <Link to="/" className="hover:text-brand-800 transition-colors flex items-center justify-center gap-1">

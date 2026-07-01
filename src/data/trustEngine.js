@@ -11,6 +11,76 @@ export const TRADE_STATUSES = [
   'Still Pending',
 ];
 
+// ── Canonical trade-field accessors & status classifiers ────────────────────
+// Single source of truth shared by Report.jsx, TradeTable.jsx and the engine
+// so counts/volume never drift between views (fixes the old t.amount vs
+// t.tradeValue mismatch that showed ₹0).
+
+/** Canonical monetary value of a trade (new `tradeValue`, legacy `amount`). */
+export function getTradeAmount(trade) {
+  return Number(trade?.tradeValue ?? trade?.amount ?? 0) || 0;
+}
+
+/** Counts toward the "Paid / Resolved" metric. */
+export function isPaidResolved(status) {
+  return status === 'Paid' || status === 'Paid on Time' || status === 'Paid Late';
+}
+
+/** Counts toward the "Late / Partial" metric. */
+export function isLatePartial(status) {
+  return status === 'Delayed' || status === 'Paid Late' || status === 'Partially Paid';
+}
+
+/** A hard default / write-off (or legacy unpaid). */
+export function isDefault(status) {
+  return status === 'Default/Written Off' || status === 'Unpaid';
+}
+
+/** Any settled status (payment was ultimately received). */
+export function isSettledStatus(status) {
+  return ['Paid', 'Paid on Time', 'Paid Late', 'Delayed', 'Partially Paid'].includes(status);
+}
+
+// ── Appeal / resolution state machine (derived-on-read) ─────────────────────
+// `appealStatus` ∈ none | open | appealed | settled | unresolved_dispute.
+// We never need a cron: the locked "unresolved_dispute" terminal state is
+// computed from the 7-day `verificationDeadline` whenever a trade is read.
+
+/** Coerce a Firestore Timestamp | ISO string | Date into a Date (or null). */
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate();
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** True once the 7-day appeal/verification window has elapsed. */
+export function isDeadlinePassed(deadline) {
+  const d = toDate(deadline);
+  return d ? d.getTime() < Date.now() : false;
+}
+
+/**
+ * resolveAppealState — terminal/effective state of a reported default.
+ * Expired `open`/`appealed` windows collapse to `unresolved_dispute`.
+ */
+export function resolveAppealState(trade = {}) {
+  const appeal = trade.appealStatus || 'none';
+  if (appeal === 'settled') return 'settled';
+  if (appeal === 'appealed') return isDeadlinePassed(trade.verificationDeadline) ? 'unresolved_dispute' : 'appealed';
+  if (appeal === 'open')     return isDeadlinePassed(trade.verificationDeadline) ? 'unresolved_dispute' : 'open';
+  return appeal; // 'none' | 'unresolved_dispute' (already locked) | unknown
+}
+
+/** Days remaining in an active appeal window (>=0), or null if not applicable. */
+export function appealDaysLeft(trade = {}) {
+  const state = resolveAppealState(trade);
+  if (state !== 'open' && state !== 'appealed') return null;
+  const d = toDate(trade.verificationDeadline);
+  if (!d) return null;
+  return Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86400000));
+}
+
 /**
  * calculateTrustScore — MVP Logic
  * --------------------------------
@@ -46,6 +116,8 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
     return {
       score: null,
       autoFlagged: false,
+      critical: false,
+      tier: 'inactive',
       factors: [{ label: `GST Status: ${businessMeta.status} — Not Scored`, delta: null, color: 'red' }],
     };
   }
@@ -100,59 +172,113 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
   }
 
   // ── Dynamic trade-based adjustments ──────────────────────────────────────
+  let critical = false;
   if (Array.isArray(trades) && trades.length > 0) {
-    const delayed   = trades.filter(t => ['Delayed', 'Paid Late', 'Partially Paid'].includes(t.status));
-    const defaulted = trades.filter(t => ['Default/Written Off', 'Unpaid'].includes(t.status));
+    const delayed   = trades.filter(t => isLatePartial(t.status));
+    const defaulted = trades.filter(t => isDefault(t.status));
     const disputed  = trades.filter(t => t.status === 'Disputed');
 
-    // Weight each trade deduction by its verification status:
-    // verified (or legacy) = 1.0 full weight, disputed = 0.3, pending/expired = 0.5
-    const verificationWeight = (trade) => {
+    // Weight each negative trade by its appeal/verification state.
+    //   • active appeal (appealed, window open)      → 0    (penalty HELD)
+    //   • settled                                    → 0    (no penalty)
+    //   • unresolved_dispute (window expired)        → 1.0  (full penalty + Critical)
+    //   • pending window still open (not yet appealed)→ 0.5
+    //   • verified / legacy                          → 1.0
+    //   • counterparty-disputed (legacy flag)        → 0.3
+    const negativeWeight = (trade) => {
+      const appeal = resolveAppealState(trade);
+      if (appeal === 'appealed' || appeal === 'settled') return 0;          // penalty held / released
+      if (appeal === 'unresolved_dispute' || appeal === 'confirmed') return 1.0; // locked / acknowledged
+      if (appeal === 'open') return 0.5;                                    // window still running
       const vs = trade.verificationStatus;
       if (!vs || vs === 'verified') return 1.0;
       if (vs === 'disputed') return 0.3;
-      if (vs === 'pending_verification') {
-        return 0.5;
-      }
+      if (vs === 'pending_verification') return 0.5;
       return 1.0;
     };
 
-    // Count fully-verified negative trades for the auto-flag threshold
+    // Critical = at least one default that the counterparty acknowledged
+    // (`confirmed`) or that locked as an unresolved dispute (window expired),
+    // or a legacy verified default.
+    critical = defaulted.some(t => {
+      const appeal = resolveAppealState(t);
+      if (appeal === 'unresolved_dispute' || appeal === 'confirmed') return true;
+      if (appeal === 'appealed' || appeal === 'open' || appeal === 'settled') return false;
+      const vs = t.verificationStatus;
+      return !vs || vs === 'verified'; // legacy default
+    });
+
     const verifiedNegative = [...delayed, ...defaulted, ...disputed]
-      .filter(t => verificationWeight(t) === 1.0).length;
+      .filter(t => negativeWeight(t) === 1.0).length;
 
     if (delayed.length > 0) {
-      const delta = -Math.round(delayed.reduce((s, t) => s + 5 * verificationWeight(t), 0) * 10) / 10;
+      const delta = -Math.round(delayed.reduce((s, t) => s + 5 * negativeWeight(t), 0) * 10) / 10;
       score += delta;
       factors.push({ label: `Delayed Trades (${delayed.length})`, delta, color: 'amber' });
     }
     if (defaulted.length > 0) {
-      const delta = -Math.round(defaulted.reduce((s, t) => s + 5 * verificationWeight(t), 0) * 10) / 10;
+      const delta = -Math.round(defaulted.reduce((s, t) => s + 5 * negativeWeight(t), 0) * 10) / 10;
       score += delta;
       factors.push({ label: `Default Trades (${defaulted.length})`, delta, color: 'red' });
     }
     if (disputed.length > 0) {
-      const delta = -Math.round(disputed.reduce((s, t) => s + 5 * verificationWeight(t), 0) * 10) / 10;
+      const delta = -Math.round(disputed.reduce((s, t) => s + 5 * negativeWeight(t), 0) * 10) / 10;
       score += delta;
       factors.push({ label: `Disputed Trades (${disputed.length})`, delta, color: 'amber' });
     }
 
-    // 6+ fully-verified negative trades → force Red regardless of base score
+    // 6+ fully-weighted negative trades → force Red regardless of base score
     if (verifiedNegative >= 6) {
-      factors.push({ label: 'Auto-flagged: High Risk (6+ verified negative trades)', delta: null, color: 'red' });
-      return { score: Math.min(49, Math.max(0, score)), autoFlagged: true, factors };
+      factors.push({ label: 'Auto-flagged: High Risk (6+ negative trades)', delta: null, color: 'red' });
+      const flagged = Math.min(49, Math.max(0, score));
+      return { score: flagged, autoFlagged: true, critical, tier: critical ? 'critical' : 'risk', factors };
     }
   }
 
-  return { score: Math.max(0, Math.min(100, score)), autoFlagged: false, factors };
+  const finalScore = Math.max(0, Math.min(100, score));
+  const tier = critical ? 'critical' : tierFromScore(finalScore);
+  return { score: finalScore, autoFlagged: false, critical, tier, factors };
+}
+
+/** Score → base tier (ignores the Critical override, which is trade-driven). */
+export function tierFromScore(score) {
+  if (score === null || score === undefined) return 'inactive';
+  if (score >= 80) return 'safe';
+  if (score >= 50) return 'caution';
+  return 'risk';
+}
+
+/** Human label for a tier. Adds the trade-driven `Critical` tier. */
+export const TIER_LABEL = {
+  safe:     'Low Risk',
+  caution:  'Medium Risk',
+  risk:     'High Risk',
+  critical: 'Critical',
+  inactive: 'Inactive',
+};
+
+/** Map a label (or tier key) back to a canonical tier key. */
+function toTier(riskOrTier) {
+  if (!riskOrTier) return 'inactive';
+  if (TIER_LABEL[riskOrTier]) return riskOrTier;               // already a tier key
+  switch (riskOrTier) {
+    case 'Low Risk':    return 'safe';
+    case 'Medium Risk': return 'caution';
+    case 'High Risk':   return 'risk';
+    case 'Critical':    return 'critical';
+    default:            return 'inactive';
+  }
+}
+
+/** Label for a tier key (e.g. 'critical' → 'Critical'). */
+export function getTierLabel(tier) {
+  return TIER_LABEL[toTier(tier)] || 'Inactive';
 }
 
 /**
- * getRiskLevel
- * ------------
- * 80–100 → Low   (Green)
- * 50–79  → Medium (Yellow)
- * 0–49   → High  (Red)
+ * getRiskLevel — score-only risk label (backward compatible).
+ * 80–100 → Low · 50–79 → Medium · 0–49 → High.
+ * NOTE: the trade-driven `Critical` tier comes from calculateTrustScore().tier.
  */
 export function getRiskLevel(score) {
   if (score >= 80) return 'Low Risk';
@@ -161,39 +287,64 @@ export function getRiskLevel(score) {
 }
 
 /**
- * getRiskHeadline — short taglines shown alongside the score ring.
+ * getScoreCaption — the single caption line under the score ring.
+ * Avoids the old "Low Risk Risk" double-word bug.
  */
-export function getRiskHeadline(risk) {
-  switch (risk) {
-    case 'Low Risk':    return 'Verified and Reliable · Safe to Trade · Low Risk Partner';
-    case 'Medium Risk': return 'Proceed with Caution · Monitor Closely · Start Small';
-    default:       return 'High Risk · Advance Payment Recommended · Manual Review Required';
+export function getScoreCaption(riskOrTier) {
+  const tier = toTier(riskOrTier);
+  if (tier === 'inactive') return 'Trust Score · Not Available';
+  return `Trust Score · ${TIER_LABEL[tier]} · out of 100`;
+}
+
+/** Advisory text shown when a business has no trade history yet. */
+export function getBaseScoreNote(score) {
+  if (score === null || score === undefined) return 'GST inactive — not scored.';
+  return 'No trade history yet — score reflects registration & GST compliance only.';
+}
+
+/** getRiskHeadline — short taglines shown alongside the score ring. */
+export function getRiskHeadline(riskOrTier) {
+  switch (toTier(riskOrTier)) {
+    case 'safe':     return 'Verified and Reliable · Safe to Trade · Low Risk Partner';
+    case 'caution':  return 'Proceed with Caution · Monitor Closely · Start Small';
+    case 'critical': return 'Critical · Unresolved Default on Record · Trade at Your Own Risk';
+    case 'risk':     return 'High Risk · Advance Payment Recommended · Manual Review Required';
+    default:         return 'GST Inactive · Not Scored';
   }
 }
 
-/**
- * getTrustPhrase — advisory sentence shown below the score.
- */
-export function getTrustPhrase(score) {
-  if (score === null) return null;
-  if (score >= 80) return "This partner has verified credentials and a reliable track record. You can proceed with standard terms.";
-  if (score >= 50) return "This partner has moderate verification. Consider starting with smaller orders or shorter payment cycles.";
-  return "This partner has limited verification or a concerning trade history. We recommend advance payment or using Dotko's protected payment options.";
-}
-
-export function getRiskColors(risk) {
-  switch (risk) {
-    case 'Low Risk':    return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' };
-    case 'Medium Risk': return { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500'   };
-    case 'High Risk':   return { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     };
-    default:       return { bg: 'bg-slate-50',   text: 'text-slate-600',   border: 'border-slate-200',   dot: 'bg-slate-400'   };
+/** getTrustPhrase — advisory sentence shown below the score. */
+export function getTrustPhrase(score, tier) {
+  const t = tier ? toTier(tier) : tierFromScore(score);
+  if (t === 'inactive' || score === null) return null;
+  switch (t) {
+    case 'safe':     return 'This partner has verified credentials and a reliable track record. You can proceed with standard terms.';
+    case 'caution':  return 'This partner has moderate verification. Consider starting with smaller orders or shorter payment cycles.';
+    case 'critical': return 'This partner has an unresolved payment default on record. We strongly recommend advance payment and thorough due diligence before trading.';
+    default:         return "This partner has limited verification or a concerning trade history. We recommend advance payment or using Dotko's protected payment options.";
   }
 }
 
-export function getScoreColor(score) {
-  if (score >= 80) return '#10b981'; // emerald / green
-  if (score >= 50) return '#f59e0b'; // amber  / yellow
-  return '#ef4444';                  // red
+export function getRiskColors(riskOrTier) {
+  switch (toTier(riskOrTier)) {
+    case 'safe':     return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' };
+    case 'caution':  return { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500'   };
+    case 'risk':     return { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     };
+    case 'critical': return { bg: 'bg-red-950/5',  text: 'text-red-900',     border: 'border-red-300',     dot: 'bg-red-800'     };
+    default:         return { bg: 'bg-slate-50',   text: 'text-slate-600',   border: 'border-slate-200',   dot: 'bg-slate-400'   };
+  }
+}
+
+/** Ring/stroke color. Pass `tier` to honor the Critical override. */
+export function getScoreColor(score, tier) {
+  const t = tier ? toTier(tier) : tierFromScore(score);
+  switch (t) {
+    case 'safe':     return '#10b981'; // emerald
+    case 'caution':  return '#f59e0b'; // amber
+    case 'critical': return '#7f1d1d'; // deep red (near-black) — locked default
+    case 'risk':     return '#ef4444'; // red
+    default:         return '#94a3b8'; // slate (inactive/N/A)
+  }
 }
 
 export function formatCurrency(amount) {

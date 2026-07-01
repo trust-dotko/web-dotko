@@ -1,100 +1,73 @@
 /**
- * /api/storage/upload.js — Vercel Serverless Function
+ * /api/storage/upload.js — Vercel Serverless Function (single upload path)
  *
- * Proxies file uploads to Firebase Storage using the Admin SDK,
- * bypassing the browser CORS restriction on the storage bucket.
- *
- * Request body (JSON):
- *   { fileBase64: string, contentType: string, userId: string, filename: string }
- * Response:
- *   { success: true, downloadUrl: string }
+ * The browser's ONLY way to put a file in Storage. Uses the Admin SDK (bypasses
+ * Storage rules). Hardened: ID-token auth, magic-byte MIME sniff (not just the
+ * client-declared contentType), 3 MB cap, SHA-256 evidence hash, and NO permanent
+ * download token. Reads happen later via /api/storage/download.js (short-lived
+ * signed URLs, party-checked). We return the storage PATH + hash, never a public
+ * URL — so leaked Firestore data can't expose documents.
  */
 
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
-import { getAuth } from 'firebase-admin/auth';
-import { randomUUID } from 'crypto';
+import crypto from 'crypto';
+import { verifyBearer, clientIp, applySecurityHeaders } from '../_firebaseAdmin.js';
+import { rateLimit } from '../_rateLimit.js';
 
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '16mb',
-    },
-  },
+export const config = { api: { bodyParser: { sizeLimit: '6mb' } } };
+
+const MAX_BYTES = 3 * 1024 * 1024; // 3 MB
+const ALLOWED = {
+  'application/pdf':  (b) => b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46, // %PDF
+  'image/png':       (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47, // \x89PNG
+  'image/jpeg':      (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,                  // JPEG SOI
 };
+ALLOWED['image/jpg'] = ALLOWED['image/jpeg'];
 
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId:   process.env.FIREBASE_PROJECT_ID   || process.env.VITE_FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey:  (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    }),
-    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  });
+function safeName(name = '') {
+  const dot = name.lastIndexOf('.');
+  const base = (dot > 0 ? name.slice(0, dot) : name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+  return ext ? `${base}.${ext}` : base;
 }
-
-const adminAuth = getAuth();
-
-async function verifyToken(req) {
-  const header = req.headers?.authorization || '';
-  if (!header.startsWith('Bearer ')) return null;
-  try {
-    return await adminAuth.verifyIdToken(header.slice(7));
-  } catch {
-    return null;
-  }
-}
-
-const ALLOWED_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
-const MAX_BYTES = 10 * 1024 * 1024;
 
 export default async function handler(req, res) {
-  const allowed = process.env.ALLOWED_ORIGIN || 'https://web.dotko.in';
-  res.setHeader('Access-Control-Allow-Origin', allowed);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
+  applySecurityHeaders(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const decoded = await verifyToken(req);
+  const decoded = await verifyBearer(req);
   if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+  const uid = decoded.uid;
 
-  const { fileBase64, contentType, userId, filename } = req.body || {};
+  const rl = rateLimit(`upload:${clientIp(req)}`, 60, 60 * 60 * 1000);
+  if (rl.limited) { res.setHeader('Retry-After', String(rl.retryAfter)); return res.status(429).json({ error: 'Too many uploads. Try again later.' }); }
 
-  if (!fileBase64 || !contentType || !userId || !filename)
-    return res.status(400).json({ error: 'Missing required fields' });
+  const { fileBase64, contentType, filename, sha256 } = req.body || {};
+  if (!fileBase64 || !contentType || !filename) return res.status(400).json({ error: 'Missing required fields' });
+  if (!ALLOWED[contentType]) return res.status(400).json({ error: 'File type not allowed' });
 
-  if (decoded.uid !== userId)
-    return res.status(403).json({ error: 'User ID mismatch' });
+  let buffer;
+  try { buffer = Buffer.from(fileBase64, 'base64'); }
+  catch { return res.status(400).json({ error: 'Invalid file encoding' }); }
 
-  if (!ALLOWED_TYPES.has(contentType))
-    return res.status(400).json({ error: 'File type not allowed' });
+  if (buffer.byteLength > MAX_BYTES) return res.status(400).json({ error: 'File exceeds 3 MB limit' });
+  if (!ALLOWED[contentType](buffer)) return res.status(400).json({ error: 'File content does not match its type' });
 
-  const buffer = Buffer.from(fileBase64, 'base64');
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  if (sha256 && sha256 !== hash) return res.status(400).json({ error: 'File integrity check failed' });
 
-  if (buffer.byteLength > MAX_BYTES)
-    return res.status(400).json({ error: 'File exceeds 10 MB limit' });
-
-  const storagePath = `trade-documents/${userId}/${filename}`;
-  const token = randomUUID();
-  const bucket = getStorage().bucket();
-  const fileRef = bucket.file(storagePath);
-
-  await fileRef.save(buffer, {
-    contentType,
-    metadata: {
-      metadata: {
-        firebaseStorageDownloadTokens: token,
-      },
-    },
-  });
-
-  const bucketName = process.env.VITE_FIREBASE_STORAGE_BUCKET;
-  const encodedPath = encodeURIComponent(storagePath);
-  const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${token}`;
-
-  return res.status(200).json({ success: true, downloadUrl });
+  const storagePath = `trade-documents/${uid}/${Date.now()}_${safeName(filename)}`;
+  try {
+    const file = getStorage().bucket(process.env.VITE_FIREBASE_STORAGE_BUCKET).file(storagePath);
+    await file.save(buffer, {
+      contentType,
+      resumable: false,
+      metadata: { metadata: { uploadedBy: uid, sha256: hash } }, // NOTE: no firebaseStorageDownloadTokens
+    });
+    return res.status(200).json({ success: true, path: storagePath, hash });
+  } catch (err) {
+    console.error('[storage/upload]', err);
+    return res.status(500).json({ error: 'Upload failed. Please try again.' });
+  }
 }

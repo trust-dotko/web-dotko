@@ -9,21 +9,21 @@ export default function FooterSection() {
     if (!footerRef.current) return;
 
     const ctx = gsap.context(() => {
-      gsap.fromTo(
-        footerRef.current,
-        { y: 20, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
-          duration: 0.7,
-          ease: 'power2.out',
-          scrollTrigger: {
-            trigger: footerRef.current,
-            start: 'top 90%',
-            toggleActions: 'play none none none',
-          },
-        }
-      );
+      // Subtle slide-up only — NEVER animate opacity here. The footer must stay
+      // visible even if ScrollTrigger mis-fires on mobile or the animation is
+      // skipped (reduced-motion). immediateRender:false keeps it at its natural
+      // position until the trigger actually runs.
+      gsap.from(footerRef.current, {
+        y: 24,
+        duration: 0.7,
+        ease: 'power2.out',
+        immediateRender: false,
+        scrollTrigger: {
+          trigger: footerRef.current,
+          start: 'top 95%',
+          toggleActions: 'play none none none',
+        },
+      });
     }, footerRef);
 
     return () => ctx.revert();
@@ -32,7 +32,7 @@ export default function FooterSection() {
   return (
     <footer
       ref={footerRef}
-      className="border-t border-slate-200 py-14 bg-white opacity-0"
+      className="border-t border-slate-200 pt-14 pb-24 sm:pb-16 bg-white"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-start justify-between gap-8">
         <div className="flex flex-col gap-4">
@@ -62,10 +62,10 @@ export default function FooterSection() {
           </div>
           <div className="flex flex-col gap-3 text-sm">
             <h4 className="font-bold text-slate-900 uppercase tracking-widest text-xs mb-1">Legal</h4>
-            <a href="/privacy-policy.html" className="text-slate-500 hover:text-brand-600 transition-colors link-underline">
+            <a href="https://www.dotko.in/privacy-policy.html" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-600 transition-colors link-underline">
               Privacy Policy
             </a>
-            <a href="/delete-account.html" className="text-slate-500 hover:text-brand-600 transition-colors link-underline">
+            <a href="https://www.dotko.in/delete-account.html" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-600 transition-colors link-underline">
               Delete Account
             </a>
           </div>

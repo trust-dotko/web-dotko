@@ -8,9 +8,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
 import {
   collection, query, orderBy, limit, getDocs,
-  doc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { TRADE_STATUSES, formatCurrency, formatDate } from '../data/trustEngine';
+import { TRADE_STATUSES, formatCurrency, formatDate, isDefault, resolveAppealState } from '../data/trustEngine';
+import { getCached, setCached } from '../utils/cache';
 
 const STATUS_COLORS = {
   'Paid on Time':       'bg-emerald-100 text-emerald-700',
@@ -35,7 +35,7 @@ export default function MyTrades() {
   const [loading,       setLoading]       = useState(true);
   const [updating,      setUpdating]      = useState(null); // tradeId being updated
   const [showModal,     setShowModal]     = useState(false);
-  const [filterStatus,  setFilterStatus]  = useState('All');
+  const [filterStatus,  setFilterStatus]  = useState(() => getCached('mytrades:filter') || 'All');
 
   // Auto-open modal when navigated from Navbar's "Submit Trade" button
   useEffect(() => {
@@ -67,28 +67,42 @@ export default function MyTrades() {
 
   useEffect(() => { load(); }, [user]);
 
+  // All trade writes are server-authoritative (client writes are denied by rules).
+  const callTradeUpdate = async (trade, payload) => {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/trade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ tradeId: trade.id, companyGSTIN: trade.counterpartyGSTIN, ...payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Update failed');
+    return data;
+  };
+
   const handleStatusUpdate = async (trade, newStatus) => {
     setUpdating(trade.id);
     try {
-      const now = serverTimestamp();
-      // Update in user's submittedTrades
-      await updateDoc(
-        doc(db, 'users', user.uid, 'submittedTrades', trade.id),
-        { status: newStatus, updatedAt: now }
-      );
-      // Mirror update to the company's trades subcollection
-      if (trade.counterpartyGSTIN) {
-        await updateDoc(
-          doc(db, 'companies', trade.counterpartyGSTIN, 'trades', trade.id),
-          { status: newStatus, updatedAt: now }
-        );
-      }
-      setTrades(prev =>
-        prev.map(t => t.id === trade.id ? { ...t, status: newStatus } : t)
-      );
+      const data = await callTradeUpdate(trade, { action: 'status', status: newStatus });
+      setTrades(prev => prev.map(t => t.id === trade.id
+        ? { ...t, status: newStatus, appealStatus: data.appealStatus ?? t.appealStatus } : t));
     } catch (err) {
       console.error('Status update failed:', err);
-      alert('Could not update status. Please try again.');
+      alert(err.message || 'Could not update status. Please try again.');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handleSettle = async (trade) => {
+    setUpdating(trade.id);
+    try {
+      await callTradeUpdate(trade, { action: 'settle' });
+      setTrades(prev => prev.map(t => t.id === trade.id
+        ? { ...t, status: 'Paid Late', appealStatus: 'settled' } : t));
+    } catch (err) {
+      console.error('Settle failed:', err);
+      alert(err.message || 'Could not mark as settled. Please try again.');
     } finally {
       setUpdating(null);
     }
@@ -136,7 +150,7 @@ export default function MyTrades() {
           {allStatuses.map(s => (
             <button
               key={s}
-              onClick={() => setFilterStatus(s)}
+              onClick={() => { setFilterStatus(s); setCached('mytrades:filter', s, 0); }}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                 filterStatus === s
                   ? 'bg-brand-800 text-white border-brand-800'
@@ -212,6 +226,17 @@ export default function MyTrades() {
                         <Loader2 className="w-3 h-3 animate-spin absolute right-2 top-1/2 -translate-y-1/2 text-brand-600 pointer-events-none" />
                       )}
                     </div>
+                    {/* Settle: only for an active default under appeal/open window */}
+                    {isDefault(trade.status) && ['open', 'appealed'].includes(resolveAppealState(trade)) && (
+                      <button
+                        onClick={() => handleSettle(trade)}
+                        disabled={updating === trade.id}
+                        className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                        title="Mark as paid/settled — releases the penalty and restores the counterparty's score"
+                      >
+                        Mark Settled
+                      </button>
+                    )}
                   </div>
                 </div>
 

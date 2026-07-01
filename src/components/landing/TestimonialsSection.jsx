@@ -34,68 +34,69 @@ export default function TestimonialsSection() {
   const trackRef = useRef(null);
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     if (!sectionRef.current || !trackRef.current) return;
 
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isMobile = window.innerWidth < 640;
+
     const ctx = gsap.context(() => {
-      // Heading animation
-      gsap.fromTo(
-        headingRef.current,
-        { y: 40, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
+      // Heading animation — slide only (never opacity-hide) so it can't vanish
+      // if the ScrollTrigger mis-fires on mobile.
+      if (!prefersReducedMotion) {
+        gsap.from(headingRef.current, {
+          y: 30,
           duration: 0.8,
           ease: 'power3.out',
-          scrollTrigger: {
-            trigger: headingRef.current,
-            start: 'top 80%',
-          },
-        }
-      );
-
-      // Horizontal scroll
-      const track = trackRef.current;
-      const cards = track.querySelectorAll('.testimonial-card');
-      const totalWidth = Array.from(cards).reduce((sum, card) => {
-        return sum + card.offsetWidth + 32;
-      }, 0);
-      const scrollDistance = totalWidth - window.innerWidth + 100;
-
-      if (scrollDistance > 0) {
-        gsap.to(track, {
-          x: -scrollDistance,
-          ease: 'none',
-          scrollTrigger: {
-            trigger: sectionRef.current,
-            start: 'top 15%',
-            end: () => `+=${scrollDistance}`,
-            pin: true,
-            scrub: 1,
-            anticipatePin: 1,
-          },
+          immediateRender: false,
+          scrollTrigger: { trigger: headingRef.current, start: 'top 85%' },
         });
       }
 
-      // Staggered card fade-in
-      cards.forEach((card, i) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 30 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.6,
-            ease: 'power2.out',
+      // Horizontal scroll (only for desktop / tablet where space permits)
+      if (!prefersReducedMotion && !isMobile) {
+        const track = trackRef.current;
+        const cards = track.querySelectorAll('.testimonial-card');
+        const totalWidth = Array.from(cards).reduce((sum, card) => {
+          return sum + card.offsetWidth + 32;
+        }, 0);
+        const scrollDistance = totalWidth - window.innerWidth + 100;
+
+        if (scrollDistance > 0) {
+          gsap.to(track, {
+            x: -scrollDistance,
+            ease: 'none',
             scrollTrigger: {
               trigger: sectionRef.current,
-              start: 'top 50%',
+              start: 'top 15%',
+              end: () => `+=${scrollDistance}`,
+              pin: true,
+              scrub: 1,
+              anticipatePin: 1,
+            },
+          });
+        }
+      }
+
+      // Staggered card slide-in — never opacity-hide (cards must stay visible
+      // even if the trigger mis-fires on mobile).
+      if (!prefersReducedMotion) {
+        const track = trackRef.current;
+        const cards = track.querySelectorAll('.testimonial-card');
+        cards.forEach((card, i) => {
+          gsap.from(card, {
+            y: 30,
+            duration: 0.6,
+            ease: 'power2.out',
+            immediateRender: false,
+            delay: i * 0.15,
+            scrollTrigger: {
+              trigger: sectionRef.current,
+              start: 'top 60%',
               toggleActions: 'play none none none',
             },
-            delay: i * 0.15,
-          }
-        );
-      });
+          });
+        });
+      }
     }, sectionRef);
 
     return () => ctx.revert();
@@ -105,20 +106,20 @@ export default function TestimonialsSection() {
     <section ref={sectionRef} className="relative py-20 sm:py-28 overflow-hidden bg-[#f8f9fb]">
       <div className="relative z-10">
         {/* Heading */}
-        <div ref={headingRef} className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 sm:mb-14 opacity-0">
+        <div ref={headingRef} className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 sm:mb-14">
           <span className="text-xs font-bold text-brand-600 uppercase tracking-[0.3em] mb-4 block">Social proof</span>
           <h2 className="text-3xl sm:text-5xl lg:text-6xl font-display font-bold text-slate-900 tracking-tight">
             Trusted by finance teams
           </h2>
         </div>
 
-        {/* Horizontal scroll track */}
-        <div className="pl-4 sm:pl-8 lg:pl-16">
-          <div ref={trackRef} className="h-scroll-track">
+        {/* Mobile: vertical stack. Desktop (sm+): horizontal track driven by ScrollTrigger. */}
+        <div className="px-4 sm:pl-8 sm:pr-0 lg:pl-16 sm:overflow-x-visible scrollbar-none">
+          <div ref={trackRef} className="h-scroll-track pb-0">
             {TESTIMONIALS.map((t) => (
               <div
                 key={t.name}
-                className="testimonial-card light-card rounded-3xl p-8 sm:p-10 group hover:border-brand-200"
+                className="testimonial-card light-card rounded-2xl sm:rounded-3xl p-6 sm:p-10 group hover:border-brand-200 snap-center flex flex-col"
               >
                 {/* Stars */}
                 <div className="flex gap-1 mb-6">

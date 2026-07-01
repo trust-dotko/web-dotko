@@ -12,6 +12,7 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { notifyWhatsAppTradeEvent } from '../_whatsapp.js';
 
 if (!getApps().length) {
   initializeApp({
@@ -43,10 +44,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid auth token' });
   }
 
-  const { tradeId, companyGSTIN, action, notes, proofUrls } = req.body || {};
+  const { tradeId, companyGSTIN, notes, proofUrls } = req.body || {};
+  // 'appeal' is the new label; 'dispute' kept as a backward-compatible alias.
+  const action = req.body?.action === 'dispute' ? 'appeal' : req.body?.action;
 
-  if (!tradeId || !companyGSTIN || !['confirm', 'dispute'].includes(action)) {
-    return res.status(400).json({ error: 'tradeId, companyGSTIN, and action (confirm|dispute) are required' });
+  if (!tradeId || !companyGSTIN || !['confirm', 'appeal'].includes(action)) {
+    return res.status(400).json({ error: 'tradeId, companyGSTIN, and action (confirm|appeal) are required' });
   }
 
   // Load the trade
@@ -69,22 +72,32 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'You are not authorised to respond to this trade' });
   }
 
-  if (trade.verificationStatus === 'verified' || trade.verificationStatus === 'disputed') {
+  if (['verified', 'disputed'].includes(trade.verificationStatus) ||
+      ['appealed', 'settled', 'confirmed'].includes(trade.appealStatus)) {
     return res.status(409).json({ error: 'This trade has already been responded to' });
   }
 
-  // Build update payload
+  // Build update payload.
+  //  • confirm → counterparty acknowledges the report. For a default this is a
+  //    `confirmed` terminal state (full penalty + Critical); for a normal trade
+  //    it just marks the record verified.
+  //  • appeal  → counterparty contests with proof. The penalty is HELD while the
+  //    7-day window runs (appealStatus 'appealed'); on expiry the engine locks it
+  //    to 'unresolved_dispute' on read.
   const update = {
-    verificationStatus:   action === 'confirm' ? 'verified' : 'disputed',
-    updatedAt:            FieldValue.serverTimestamp(),
+    verificationStatus: action === 'confirm' ? 'verified' : 'disputed',
+    updatedAt:          FieldValue.serverTimestamp(),
   };
 
-  if (action === 'dispute') {
+  if (action === 'confirm') {
+    update.appealStatus = 'confirmed';
+  } else {
+    update.appealStatus = 'appealed';
     update.verificationResponse = {
       respondedAt: FieldValue.serverTimestamp(),
       respondedBy: decoded.uid,
       notes:       notes || '',
-      proofUrls:   Array.isArray(proofUrls) ? proofUrls : [],
+      proofUrls:   Array.isArray(proofUrls) ? proofUrls.slice(0, 10) : [],
     };
   }
 
@@ -96,21 +109,32 @@ export default async function handler(req, res) {
     await mirrorRef.update(update).catch(() => {});
   }
 
-  // Notify the original submitter
+  // Notify the original submitter (in-app always; WhatsApp on appeal if we have a phone)
   if (trade.submittedBy) {
-    const actionLabel    = action === 'confirm' ? 'confirmed' : 'disputed';
+    const actionLabel    = action === 'confirm' ? 'confirmed' : 'appealed';
     const responderLabel = trade.counterpartyName || callerGSTIN || companyGSTIN;
+    const amountStr      = `₹${(trade.tradeValue || 0).toLocaleString('en-IN')}`;
     await db.collection('notifications').add({
       recipientId: trade.submittedBy,
-      type:        'trade_verification',
+      type:        action === 'confirm' ? 'trade_confirmed' : 'trade_appealed',
       tradeId,
-      title:       `Trade ${actionLabel}`,
-      message:     `${responderLabel} has ${actionLabel} the trade you filed (₹${(trade.tradeValue || 0).toLocaleString('en-IN')}).`,
+      title:       action === 'confirm' ? 'Trade confirmed' : 'Trade appealed',
+      message:     action === 'confirm'
+        ? `${responderLabel} confirmed the ${amountStr} trade you filed.`
+        : `${responderLabel} appealed the ${amountStr} default you filed and uploaded proof. You have until the 7-day window closes to review or settle.`,
       read:        false,
       createdAt:   FieldValue.serverTimestamp(),
       updatedAt:   FieldValue.serverTimestamp(),
     });
+
+    if (action === 'appeal') {
+      try {
+        const subDoc = await db.collection('users').doc(trade.submittedBy).get();
+        const phone  = subDoc.exists ? subDoc.data().mobileNumber : null;
+        if (phone) await notifyWhatsAppTradeEvent(phone, 'appeal_opened', [responderLabel, amountStr]);
+      } catch { /* best-effort */ }
+    }
   }
 
-  return res.status(200).json({ success: true, verificationStatus: update.verificationStatus });
+  return res.status(200).json({ success: true, verificationStatus: update.verificationStatus, appealStatus: update.appealStatus });
 }

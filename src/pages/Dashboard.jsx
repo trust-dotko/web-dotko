@@ -45,10 +45,10 @@ export default function Dashboard() {
               <Shield className="w-4 h-4 text-brand-800" /> GST Search
             </h2>
             <button
-              onClick={() => navigate('/report/new')} // We can make a generic report page or focus search
+              onClick={() => navigate('/my-trades', { state: { openModal: true } })}
               className="inline-flex items-center gap-2 text-sm font-semibold text-white bg-brand-800 hover:bg-brand-700 px-4 py-2 rounded-lg transition-colors"
             >
-              <TrendingUp className="w-4 h-4" /> Submit Trade Report
+              <TrendingUp className="w-4 h-4" /> Submit Trade
             </button>
           </div>
           <GSTSearchBar placeholder="Search any GSTIN to view report or submit trade…" />

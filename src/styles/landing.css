@@ -243,6 +243,14 @@
   will-change: transform;
 }
 
+@media (max-width: 640px) {
+  /* On mobile the horizontal-swipe carousel is unreliable — stack vertically. */
+  .h-scroll-track {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+
 /* ── Magnetic Button ───────────────────────────────────────────────────────── */
 .magnetic-btn {
   position: relative;
@@ -342,8 +350,8 @@
 
 @media (max-width: 640px) {
   .testimonial-card {
-    min-width: 300px;
-    max-width: 340px;
+    min-width: 100%;
+    max-width: 100%;
   }
 }
 
@@ -370,6 +378,15 @@
 /* ── Stat value ────────────────────────────────────────────────────────────── */
 .stat-value {
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Hide scrollbars ───────────────────────────────────────────────────────── */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
 
 /* ── Respect reduced motion ────────────────────────────────────────────────── */

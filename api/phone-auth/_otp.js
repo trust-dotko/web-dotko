@@ -5,6 +5,7 @@
 // (Files prefixed with "_" are ignored by Vercel's filesystem router.)
 
 import crypto from 'crypto';
+import { sendWhatsAppTemplate, whatsappConfigured } from '../_whatsapp.js';
 
 export const OTP_TTL_MS = 5 * 60 * 1000;       // 5 minutes
 export const RESEND_COOLDOWN_MS = 30 * 1000;   // 30s between sends to a number
@@ -28,36 +29,13 @@ export function generateOtp() {
  * template is approved without a code change.
  */
 export async function sendWhatsAppOtp(phone, otp) {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!whatsappConfigured()) throw new Error('WhatsApp is not configured');
   const template = process.env.WHATSAPP_OTP_TEMPLATE || 'dotko_otp';
-  const lang = process.env.WHATSAPP_OTP_TEMPLATE_LANG || 'en';
-  if (!token || !phoneId) throw new Error('WhatsApp is not configured');
-
-  const payload = {
-    messaging_product: 'whatsapp',
-    to: `91${phone}`,
-    type: 'template',
-    template: {
-      name: template,
-      language: { code: lang },
-      components: [
-        // Body variable {{1}} — the verification code
-        { type: 'body', parameters: [{ type: 'text', text: otp }] },
-        // Copy-code / one-tap button carries the same code (Meta auth-template format)
-        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: otp }] },
-      ],
-    },
-  };
-
-  const r = await fetch(`https://graph.facebook.com/v24.0/${phoneId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+  const lang     = process.env.WHATSAPP_OTP_TEMPLATE_LANG || 'en';
+  return sendWhatsAppTemplate(phone, {
+    template,
+    lang,
+    bodyParams:  [otp], // {{1}} verification code
+    buttonParam: otp,   // copy-code / one-tap button carries the same code
   });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok || body.error) {
-    throw new Error(body.error?.message || `WhatsApp send failed (${r.status})`);
-  }
-  return body;
 }

@@ -30,25 +30,26 @@ export default function HowItWorksSection() {
   const progressFillRef = useRef(null);
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     if (!sectionRef.current || !cardsContainerRef.current) return;
+    
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isMobile = window.innerWidth < 640;
 
     const ctx = gsap.context(() => {
-      // Heading reveal
-      gsap.fromTo(
-        headingRef.current,
-        { y: 40, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
+      // Heading reveal — slide only (never opacity-hide), so it can't vanish if
+      // the ScrollTrigger mis-fires on mobile.
+      if (!prefersReducedMotion) {
+        gsap.from(headingRef.current, {
+          y: 30,
           duration: 0.8,
           ease: 'power3.out',
-          scrollTrigger: {
-            trigger: headingRef.current,
-            start: 'top 80%',
-          },
-        }
-      );
+          immediateRender: false,
+          scrollTrigger: { trigger: headingRef.current, start: 'top 85%' },
+        });
+      }
+
+      // Skip pinning, stacking, and progress line fill on mobile or reduced motion
+      if (prefersReducedMotion || isMobile) return;
 
       const cards = cardsContainerRef.current.querySelectorAll('.stack-card');
       const totalCards = cards.length;
@@ -99,7 +100,7 @@ export default function HowItWorksSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative py-28 sm:py-40 overflow-hidden"
+      className="relative py-20 sm:py-40 overflow-hidden"
       style={{
         background: 'linear-gradient(180deg, #0047ab 0%, #1f5fd6 30%, #000080 60%, #0047ab 100%)',
       }}
@@ -115,7 +116,7 @@ export default function HowItWorksSection() {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         {/* Heading */}
-        <div ref={headingRef} className="text-center mb-20 opacity-0">
+        <div ref={headingRef} className="text-center mb-12 sm:mb-20">
           <span className="text-xs font-bold text-accent-400 uppercase tracking-[0.3em] mb-4 block">How it works</span>
           <h2 className="text-3xl sm:text-5xl lg:text-6xl font-display font-bold text-white tracking-tight">
             From lookup to settlement
@@ -124,7 +125,7 @@ export default function HowItWorksSection() {
         </div>
 
         {/* Stacking cards */}
-        <div ref={cardsContainerRef} className="relative space-y-6">
+        <div ref={cardsContainerRef} className="relative space-y-4 sm:space-y-6">
           {/* Progress line */}
           <div className="progress-line hidden sm:block">
             <div ref={progressFillRef} className="progress-line-fill" />
@@ -133,7 +134,7 @@ export default function HowItWorksSection() {
           {STEPS.map(({ step, icon: Icon, title, desc }, i) => (
             <div
               key={step}
-              className="stack-card glass-card rounded-3xl p-8 sm:p-10 sm:pl-20 relative"
+              className="stack-card glass-card rounded-2xl sm:rounded-3xl p-6 sm:p-10 sm:pl-20 relative"
             >
               {/* Step indicator */}
               <div className="hidden sm:flex absolute left-6 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-accent-400/15 border border-accent-400/30 items-center justify-center">
