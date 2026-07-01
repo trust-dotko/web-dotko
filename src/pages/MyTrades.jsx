@@ -70,7 +70,7 @@ export default function MyTrades() {
   // All trade writes are server-authoritative (client writes are denied by rules).
   const callTradeUpdate = async (trade, payload) => {
     const token = await user.getIdToken();
-    const res = await fetch('/api/trade/update', {
+    const res = await fetch('/api/trade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ tradeId: trade.id, companyGSTIN: trade.counterpartyGSTIN, ...payload }),

@@ -251,10 +251,11 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
 
       // 2. Submit through the authoritative server endpoint (it writes all docs).
       const token = await getToken();
-      const res = await fetch('/api/trade/submit', {
+      const res = await fetch('/api/trade', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          action:            'submit',
           counterpartyGSTIN: form.counterpartyGSTIN.trim().toUpperCase(),
           counterpartyName:  form.counterpartyName.trim(),
           tradeType:         form.tradeType,

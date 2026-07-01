@@ -33,6 +33,12 @@ function devApiPlugin(env) {
   const API_KEY = useTest ? env.GST_TEST_API_KEY : env.GST_API_KEY
   const SECRET  = useTest ? env.GST_TEST_API_SECRET : env.GST_API_SECRET
 
+  // Expose loaded env to the real serverless handlers (they read process.env),
+  // so the dev middleware can delegate to them instead of re-implementing.
+  for (const [k, v] of Object.entries(env)) {
+    if (process.env[k] === undefined) process.env[k] = v
+  }
+
   let cachedToken = null
   let tokenExpiry = null
 
@@ -406,72 +412,9 @@ function devApiPlugin(env) {
           return res.end(JSON.stringify({ score: 50, label: 'Caution', description: 'Limited verification', color: '#F59E0B' }))
         }
 
-        // ---- /api/storage/upload ----
-        if (req.url === '/api/storage/upload' && req.method === 'POST') {
-          const body = req.body || {}
-          const { contentType, userId, filename } = body
-          if (!body.fileBase64 || !contentType || !userId || !filename) {
-            res.statusCode = 400
-            return res.end(JSON.stringify({ error: 'Missing required fields' }))
-          }
-          // In dev mode, return a placeholder URL (no real upload)
-          const mockToken = `dev-${Date.now()}`
-          const encodedPath = encodeURIComponent(`trade-documents/${userId}/${filename}`)
-          const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/dotko-b2543.firebasestorage.app/o/${encodedPath}?alt=media&token=${mockToken}`
-          console.log('[dev-api] Storage upload (mock):', filename)
-          return res.end(JSON.stringify({ success: true, downloadUrl }))
-        }
-
-        // ---- /api/trade/submit ----
-        if (req.url === '/api/trade/submit' && req.method === 'POST') {
-          const body = req.body || {}
-          const {
-            counterpartyGSTIN, counterpartyName, tradeType, invoiceNumber,
-            tradeValue, creditPeriod, invoiceDate, paymentDueDate, status,
-            submitterGSTIN, submitterName,
-          } = body
-
-          // Basic validation
-          const gstRe = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
-          if (!counterpartyGSTIN || !gstRe.test((counterpartyGSTIN || '').trim().toUpperCase())) {
-            res.statusCode = 400
-            return res.end(JSON.stringify({ error: 'Valid GSTIN required' }))
-          }
-          if (!tradeValue || Number(tradeValue) <= 0) {
-            res.statusCode = 400
-            return res.end(JSON.stringify({ error: 'tradeValue must be > 0' }))
-          }
-
-          // Decode uid from JWT (no Admin SDK needed in dev)
-          const authHeader = req.headers?.authorization || ''
-          let uid = 'dev-user'
-          try {
-            const tokenStr = authHeader.replace('Bearer ', '')
-            const payload = JSON.parse(Buffer.from(tokenStr.split('.')[1], 'base64').toString())
-            if (payload.user_id) uid = payload.user_id
-          } catch {}
-
-          const tradeId = `dev-trade-${Date.now()}`
-          const trade = {
-            id: tradeId,
-            counterpartyGSTIN: (counterpartyGSTIN || '').trim().toUpperCase(),
-            counterpartyName:  (counterpartyName  || '').trim(),
-            tradeType:         tradeType  || 'Sale',
-            invoiceNumber:     invoiceNumber || '',
-            tradeValue:        Number(tradeValue),
-            creditPeriod:      Number(creditPeriod || 0),
-            invoiceDate:       invoiceDate    || '',
-            paymentDueDate:    paymentDueDate || '',
-            status:            status || 'Still Pending',
-            submittedBy:       uid,
-            submitterGSTIN:    (submitterGSTIN || '').trim().toUpperCase(),
-            submitterName:     (submitterName  || '').trim(),
-            createdAt:         new Date().toISOString(),
-            updatedAt:         new Date().toISOString(),
-          }
-          console.log('[dev-api] Trade submitted:', trade.counterpartyGSTIN, trade.status)
-          return res.end(JSON.stringify({ success: true, tradeId, trade }))
-        }
+        // NOTE: /api/trade (submit/update/verify) and /api/storage/* are handled
+        // by the generic delegation fallback below, which invokes the REAL
+        // serverless handlers (single source of truth — no dev/prod drift).
 
         // ---- /api/kyc/entitylocker/sdk/initiate ----
         // Uses the same Sandbox.co.in credentials as GST verification — no new keys needed
@@ -584,6 +527,30 @@ function devApiPlugin(env) {
           }
           console.log('[dev-api] EntityLocker results — mock data for session:', session_id)
           return res.end(JSON.stringify({ success: true, data: mockData }))
+        }
+
+        // ---- Delegate any other /api/* route to the REAL Vercel handler ----
+        // Adapts the Node res to the Express-like API the handlers expect, so dev
+        // and prod run identical code (trade router, storage upload/download, …).
+        try {
+          const urlPath = req.url.split('?')[0].replace(/\/$/, '')
+          const rel = urlPath.replace(/^\/api\//, '')
+          const candidates = [
+            path.join(process.cwd(), 'api', `${rel}.js`),
+            path.join(process.cwd(), 'api', rel, 'index.js'),
+          ]
+          const file = candidates.find(f => fs.existsSync(f))
+          if (file) {
+            const mod = await import(`file://${file.replace(/\\/g, '/')}`)
+            res.status = (c) => { res.statusCode = c; return res }
+            res.json = (o) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); return res }
+            await mod.default(req, res)
+            return
+          }
+        } catch (err) {
+          console.error('[dev-api] delegate error:', err)
+          res.statusCode = 500
+          return res.end(JSON.stringify({ error: `Dev API error: ${err.message}` }))
         }
 
         // Unknown API route

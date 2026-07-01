@@ -30,7 +30,7 @@ function TradeCard({ trade, companyGSTIN, onDone }) {
     setError('');
     try {
       const token = await user.getIdToken();
-      const res   = await fetch('/api/trade/verify', {
+      const res   = await fetch('/api/trade', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body:    JSON.stringify({ tradeId: trade.id, companyGSTIN, action: 'confirm' }),
@@ -57,7 +57,7 @@ function TradeCard({ trade, companyGSTIN, onDone }) {
         proofUrls.push(path);
       }
       const token = await getToken();
-      const res = await fetch('/api/trade/verify', {
+      const res = await fetch('/api/trade', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body:    JSON.stringify({ tradeId: trade.id, companyGSTIN, action: 'appeal', notes: notes.trim(), proofUrls }),
