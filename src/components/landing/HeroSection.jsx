@@ -73,7 +73,7 @@ export default function HeroSection() {
         <div className="hero-orb absolute -bottom-40 right-1/4 w-[300px] h-[300px] bg-accent-400/8 rounded-full blur-[100px]" />
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 text-center relative z-10">
+      <div className="w-full max-w-5xl mx-auto px-5 sm:px-6 lg:px-8 py-8 sm:py-10 text-center relative z-10">
         {/* Headline */}
         <h1 ref={headlineRef} className="text-4xl sm:text-6xl lg:text-7xl font-display font-bold text-white leading-[1.05] tracking-tight mb-3" style={{ perspective: '800px' }}>
           {headlineWords1.map((word, i) => (

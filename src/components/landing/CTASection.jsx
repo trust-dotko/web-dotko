@@ -24,6 +24,7 @@ export default function CTASection() {
           opacity: 1,
           duration: 1,
           ease: 'power3.out',
+          immediateRender: false, // never leave the card hidden if the trigger mis-fires (mobile)
           scrollTrigger: {
             trigger: sectionRef.current,
             start: 'top 70%',
@@ -63,9 +64,10 @@ export default function CTASection() {
           opacity: 1,
           duration: 0.7,
           ease: 'power2.out',
+          immediateRender: false, // keep content visible if the trigger mis-fires
           scrollTrigger: {
             trigger: contentRef.current,
-            start: 'top 80%',
+            start: 'top 85%',
             toggleActions: 'play none none none',
           },
         }
@@ -122,7 +124,7 @@ export default function CTASection() {
       <div className="max-w-5xl mx-auto relative z-10">
         <div
           ref={cardRef}
-          className="animated-border rounded-[3rem] relative opacity-0"
+          className="animated-border rounded-[3rem] relative"
           style={{
             background: 'linear-gradient(135deg, #0047ab 0%, #1f5fd6 40%, #82c8e5 100%)',
           }}
@@ -143,7 +145,7 @@ export default function CTASection() {
               ))}
             </h2>
 
-            <div ref={contentRef} className="opacity-0">
+            <div ref={contentRef}>
               <p className="text-blue-50/70 text-lg sm:text-xl mb-12 max-w-xl mx-auto leading-relaxed relative z-10">
                 Create a free account to run unlimited searches, file trades, and protect your own trust score.
               </p>

@@ -430,7 +430,7 @@ export default function SubmitTradeModal({ gst: prefilledGST, businessName: pref
               {/* ── File Attachments ── */}
               <div className="border-t border-slate-100 pt-4 space-y-3">
                 <p className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                  <Paperclip className="w-3.5 h-3.5" /> Attach Documents <span className="font-normal text-slate-400">(optional · PDF, JPG, PNG · max 10 MB each)</span>
+                  <Paperclip className="w-3.5 h-3.5" /> Attach Documents <span className="font-normal text-slate-400">(optional · PDF, JPG, PNG · max 3 MB each)</span>
                 </p>
 
                 {/* Invoice Copies */}
