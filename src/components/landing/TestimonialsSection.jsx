@@ -40,22 +40,16 @@ export default function TestimonialsSection() {
     const isMobile = window.innerWidth < 640;
 
     const ctx = gsap.context(() => {
-      // Heading animation
+      // Heading animation — slide only (never opacity-hide) so it can't vanish
+      // if the ScrollTrigger mis-fires on mobile.
       if (!prefersReducedMotion) {
-        gsap.fromTo(
-          headingRef.current,
-          { y: 40, opacity: 0 },
-          {
-            y: 0,
-            opacity: 1,
-            duration: 0.8,
-            ease: 'power3.out',
-            scrollTrigger: {
-              trigger: headingRef.current,
-              start: 'top 80%',
-            },
-          }
-        );
+        gsap.from(headingRef.current, {
+          y: 30,
+          duration: 0.8,
+          ease: 'power3.out',
+          immediateRender: false,
+          scrollTrigger: { trigger: headingRef.current, start: 'top 85%' },
+        });
       }
 
       // Horizontal scroll (only for desktop / tablet where space permits)
@@ -83,27 +77,26 @@ export default function TestimonialsSection() {
         }
       }
 
-      // Staggered card fade-in
-      const track = trackRef.current;
-      const cards = track.querySelectorAll('.testimonial-card');
-      cards.forEach((card, i) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 30 },
-          {
-            opacity: 1,
-            y: 0,
+      // Staggered card slide-in — never opacity-hide (cards must stay visible
+      // even if the trigger mis-fires on mobile).
+      if (!prefersReducedMotion) {
+        const track = trackRef.current;
+        const cards = track.querySelectorAll('.testimonial-card');
+        cards.forEach((card, i) => {
+          gsap.from(card, {
+            y: 30,
             duration: 0.6,
             ease: 'power2.out',
+            immediateRender: false,
+            delay: i * 0.15,
             scrollTrigger: {
               trigger: sectionRef.current,
-              start: 'top 50%',
+              start: 'top 60%',
               toggleActions: 'play none none none',
             },
-            delay: i * 0.15,
-          }
-        );
-      });
+          });
+        });
+      }
     }, sectionRef);
 
     return () => ctx.revert();
@@ -113,20 +106,20 @@ export default function TestimonialsSection() {
     <section ref={sectionRef} className="relative py-20 sm:py-28 overflow-hidden bg-[#f8f9fb]">
       <div className="relative z-10">
         {/* Heading */}
-        <div ref={headingRef} className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 sm:mb-14 opacity-0">
+        <div ref={headingRef} className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mb-8 sm:mb-14">
           <span className="text-xs font-bold text-brand-600 uppercase tracking-[0.3em] mb-4 block">Social proof</span>
           <h2 className="text-3xl sm:text-5xl lg:text-6xl font-display font-bold text-slate-900 tracking-tight">
             Trusted by finance teams
           </h2>
         </div>
 
-        {/* Horizontal scroll track wrapper (touch swiping on mobile, desktop handled by ScrollTrigger) */}
-        <div className="pl-4 sm:pl-8 lg:pl-16 overflow-x-auto sm:overflow-x-visible scrollbar-none snap-x snap-mandatory sm:snap-none">
-          <div ref={trackRef} className="h-scroll-track pb-6 sm:pb-0">
+        {/* Mobile: vertical stack. Desktop (sm+): horizontal track driven by ScrollTrigger. */}
+        <div className="px-4 sm:pl-8 sm:pr-0 lg:pl-16 sm:overflow-x-visible scrollbar-none">
+          <div ref={trackRef} className="h-scroll-track pb-0">
             {TESTIMONIALS.map((t) => (
               <div
                 key={t.name}
-                className="testimonial-card light-card rounded-3xl p-8 sm:p-10 group hover:border-brand-200 snap-center"
+                className="testimonial-card light-card rounded-2xl sm:rounded-3xl p-6 sm:p-10 group hover:border-brand-200 snap-center flex flex-col"
               >
                 {/* Stars */}
                 <div className="flex gap-1 mb-6">

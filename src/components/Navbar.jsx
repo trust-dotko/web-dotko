@@ -108,19 +108,19 @@ export default function Navbar() {
               </button>
             </>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <Link
                 to="/login"
-                className={`inline-flex items-center gap-1.5 text-sm transition-colors px-3 py-1.5 ${linkTextClass}`}
+                className={`inline-flex items-center gap-1.5 text-sm whitespace-nowrap transition-colors px-2.5 py-1.5 ${linkTextClass}`}
               >
-                <LogIn className="w-4 h-4" />
+                <LogIn className="w-4 h-4 shrink-0" />
                 Sign In
               </Link>
               <Link
                 to="/signup"
-                className="btn-accent inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg"
+                className="btn-accent inline-flex items-center gap-1.5 text-sm whitespace-nowrap px-3.5 sm:px-4 py-2 rounded-lg"
               >
-                <UserPlus className="w-4 h-4" />
+                <UserPlus className="w-4 h-4 shrink-0" />
                 Get Started
               </Link>
             </div>
