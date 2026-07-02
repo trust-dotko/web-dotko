@@ -93,11 +93,29 @@ describe('calculateTrustScore — trade adjustments, appeals & Critical', () => 
     expect(tier).toBe('critical');
   });
 
-  it('a settled default applies no penalty and is not Critical', () => {
+  it('a settled default removes the penalty AND earns a positive bonus above baseline', () => {
     const trades = [{ status: 'Default/Written Off', appealStatus: 'settled' }];
     const { score, critical } = calculateTrustScore(trades, META_FULL);
-    expect(score).toBe(80);
+    expect(score).toBe(85); // 80 baseline + 5 settled-dispute bonus (no lingering penalty)
     expect(critical).toBe(false);
+  });
+
+  it('settled-dispute bonus is capped at +15 even with many settlements', () => {
+    const trades = Array(5).fill({ status: 'Default/Written Off', appealStatus: 'settled' });
+    const { score } = calculateTrustScore(trades, META_FULL);
+    expect(score).toBe(95); // 80 + min(5*5, 15) = 80 + 15
+  });
+
+  it('Paid on Time trades earn a capped bonus on top of the pillar baseline', () => {
+    const trades = [{ status: 'Paid on Time' }, { status: 'Paid on Time' }];
+    const { score } = calculateTrustScore(trades, META_FULL);
+    expect(score).toBe(84); // 80 + min(2*2, 10) = 80 + 4
+  });
+
+  it('Paid-on-time bonus caps at +10 regardless of trade count', () => {
+    const trades = Array(10).fill({ status: 'Paid on Time' });
+    const { score } = calculateTrustScore(trades, META_FULL);
+    expect(score).toBe(90); // 80 + min(10*2, 10) = 80 + 10
   });
 
   it('auto-flags to <=49 with 6+ fully-weighted negative trades', () => {

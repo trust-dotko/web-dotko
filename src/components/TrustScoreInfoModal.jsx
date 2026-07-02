@@ -65,7 +65,8 @@ const TIERS = [
 ];
 
 const ADJUSTMENTS = [
-  { status: 'Paid on Time', effect: 'No change', color: 'emerald' },
+  { status: 'Paid on Time', effect: '+2 points per trade (capped at +10)', color: 'emerald' },
+  { status: 'Settled Dispute', effect: '+5 points per trade (capped at +15)', color: 'emerald' },
   { status: 'Delayed', effect: '−5 points', color: 'amber' },
   { status: 'Default / Written Off', effect: '−5 points', color: 'red' },
   { status: '6 or more negative trades', effect: 'Auto-flagged as High Risk regardless of base score', color: 'red' },
@@ -233,7 +234,9 @@ export default function TrustScoreInfoModal({ onClose }) {
               </table>
             </div>
             <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
-              The more <span className="font-medium text-emerald-600">Paid on Time</span> trades a business has, the lower the risk classification. The more{' '}
+              The more <span className="font-medium text-emerald-600">Paid on Time</span> trades a business has, the lower the risk classification.
+              Resolving a reported default by <span className="font-medium text-emerald-600">settling</span> also raises the score — good-faith
+              resolution is rewarded, not just penalty-free. The more{' '}
               <span className="font-medium text-red-600">Delayed or Default</span> trades, the higher the risk.
             </p>
           </section>

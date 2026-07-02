@@ -227,6 +227,27 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
       factors.push({ label: `Disputed Trades (${disputed.length})`, delta, color: 'amber' });
     }
 
+    // ── Positive trade-history bonus ─────────────────────────────────────
+    // Good behavior should move the score, not just avoid hurting it: paying
+    // on time and resolving a reported default (settling) both add points on
+    // top of the pillar baseline. Each bucket is capped so trade volume alone
+    // can't dominate the registration-based score.
+    const cleanPaid = trades.filter(t => t.status === 'Paid on Time' || t.status === 'Paid');
+    const settledDisputes = trades.filter(t => resolveAppealState(t) === 'settled');
+
+    if (cleanPaid.length > 0) {
+      const bonus = Math.min(cleanPaid.length * 2, 10);
+      score += bonus;
+      factors.push({ label: `Paid on Time (${cleanPaid.length})`, delta: bonus, color: 'green' });
+    }
+    if (settledDisputes.length > 0) {
+      // Settling weighs more than a routine on-time payment — it reflects an
+      // actively resolved dispute, a stronger trust signal.
+      const bonus = Math.min(settledDisputes.length * 5, 15);
+      score += bonus;
+      factors.push({ label: `Resolved Disputes (${settledDisputes.length})`, delta: bonus, color: 'green' });
+    }
+
     // 6+ fully-weighted negative trades → force Red regardless of base score
     if (verifiedNegative >= 6) {
       factors.push({ label: 'Auto-flagged: High Risk (6+ negative trades)', delta: null, color: 'red' });
