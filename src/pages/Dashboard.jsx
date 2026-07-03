@@ -23,14 +23,18 @@ export default function Dashboard() {
     }
   }, [location.state]);
   const [submittedTradeCount,  setSubmittedTradeCount]  = useState(null);
+  const [searchCount,          setSearchCount]          = useState(null);
   const [showVerifyModal,      setShowVerifyModal]      = useState(false);
   const [bannerKey,            setBannerKey]            = useState(0);
 
   useEffect(() => {
-    if (!user) { setSubmittedTradeCount(0); return; }
+    if (!user) { setSubmittedTradeCount(0); setSearchCount(0); return; }
     getCountFromServer(collection(db, 'users', user.uid, 'submittedTrades'))
       .then(snap => setSubmittedTradeCount(snap.data().count))
       .catch(() => setSubmittedTradeCount(0));
+    getCountFromServer(collection(db, 'users', user.uid, 'searches'))
+      .then(snap => setSearchCount(snap.data().count))
+      .catch(() => setSearchCount(0));
   }, [user]);
 
   return (
@@ -102,7 +106,7 @@ export default function Dashboard() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <StatCard icon={TrendingUp} label="Searches Done" value="0" />
+          <StatCard icon={TrendingUp} label="Searches Done" value={searchCount === null ? '…' : searchCount.toString()} />
           <StatCard icon={Shield}     label="Profile Status"    value={profile?.profileComplete !== false ? "Active" : "Pending"} />
           <StatCard
             icon={Briefcase}
