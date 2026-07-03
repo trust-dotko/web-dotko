@@ -58,6 +58,25 @@ describe('calculateTrustScore — pillar baseline (no trades)', () => {
   it('handles null businessMeta and undefined trades gracefully', () => {
     expect(calculateTrustScore(undefined, null).score).toBe(20);
   });
+
+  it('parses DD/MM/YYYY registration dates from the GST/EntityLocker registry (not native Date)', () => {
+    // Regression: new Date('15/05/2018') is Invalid Date (native parser guesses
+    // MM/DD, and 15 isn't a month) — this silently docked Business Age to 0.
+    // Real case: 24ABLFA7032N1Z8 scored 60 instead of 80 because of this.
+    const day15 = { ...META_FULL, incorporated: '15/05/2018' }; // day > 12 broke native parsing
+    const day01 = { ...META_FULL, incorporated: '01/07/2017' }; // day <= 12 "parsed" but as the wrong date
+    expect(calculateTrustScore([], day15).score).toBe(80);
+    expect(calculateTrustScore([], day01).score).toBe(80);
+  });
+
+  it('still scores an ISO-format incorporated date correctly', () => {
+    expect(calculateTrustScore([], { ...META_FULL, incorporated: '2018-05-15' }).score).toBe(80);
+  });
+
+  it('treats an unparseable registration date as unknown (partial credit), not a crash', () => {
+    const { score } = calculateTrustScore([], { ...META_FULL, incorporated: 'not-a-date' });
+    expect(score).toBe(70); // 20 (Identity) + 10 (Age, unknown) + 20 + 20 = 70
+  });
 });
 
 describe('calculateTrustScore — trade adjustments, appeals & Critical', () => {

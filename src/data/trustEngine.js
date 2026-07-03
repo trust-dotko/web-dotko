@@ -54,6 +54,25 @@ function toDate(value) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * parseRegistrationDate — GST/EntityLocker registry APIs return dates as
+ * "DD/MM/YYYY" (Indian format). `new Date(str)` can't parse that reliably:
+ * it guesses MM/DD/YYYY, so "15/05/2018" becomes Invalid Date (no month 15)
+ * and "01/07/2017" silently parses as Jan-7 instead of Jul-1. Both corrupt
+ * the Business Age pillar. Handle DD/MM/YYYY explicitly; fall back to native
+ * parsing for ISO strings (companies/{gst}.incorporated may already be ISO).
+ */
+function parseRegistrationDate(str) {
+  if (!str) return null;
+  const dmy = String(str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    const [, dd, mm, yyyy] = dmy;
+    const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return toDate(str);
+}
+
 /** True once the 7-day appeal/verification window has elapsed. */
 export function isDeadlinePassed(deadline) {
   const d = toDate(deadline);
@@ -138,8 +157,9 @@ export function calculateTrustScore(trades = [], businessMeta = {}) {
   {
     const regStr = businessMeta.incorporated || businessMeta.registrationDate;
     let pts = 10; // unknown → partial credit
-    if (regStr) {
-      const months = (Date.now() - new Date(regStr).getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+    const regDate = parseRegistrationDate(regStr);
+    if (regDate) {
+      const months = (Date.now() - regDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
       pts = months >= 36 ? 20 : months >= 6 ? 10 : 0;
     }
     score += pts;
