@@ -1,56 +1,72 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, ShieldCheck, Building2, AlertCircle, RefreshCw, Lock, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, ShieldCheck, Building2, AlertCircle, Search, LogOut, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { verifyGSTIN } from '../config/firebase';
+import { isValidGST } from '../data/trustEngine';
 
 /**
  * CompleteProfileGate — full-screen popup shown after signup (and to any
- * authenticated user whose profile isn't complete). The user verifies their
- * business through EntityLocker; verified data is written server-side. Until
- * that succeeds, the rest of the app stays gated behind this overlay.
+ * authenticated user whose profile isn't complete). The user enters their GSTIN;
+ * we auto-fetch the business details from the public GST registry, they review
+ * and confirm, and the verified details are written to the profile server-side.
+ * Until that succeeds, the rest of the app stays gated behind this overlay.
  */
 export default function CompleteProfileGate() {
-  const { startEntityLocker, completeProfile, logout } = useAuth();
-  const [status, setStatus] = useState('idle'); // idle | starting | redirecting | completing | error
+  const { completeProfile, logout } = useAuth();
+  const [stage, setStage] = useState('input'); // input | preview
+  const [gstin, setGstin] = useState('');
+  const [business, setBusiness] = useState(null); // parsed preview from /api/gst-verify
+  const [status, setStatus] = useState('idle'); // idle | searching | confirming
   const [error, setError] = useState('');
-  const handledRef = useRef(false);
 
-  // Handle the redirect back from EntityLocker (?session_id=… or ?state=…)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sid = params.get('session_id') || params.get('state');
-    if (!sid || handledRef.current) return;
-    handledRef.current = true;
+  const clean = gstin.trim().toUpperCase();
+  const gstValid = isValidGST(clean);
+  const busy = status === 'searching' || status === 'confirming';
 
-    // Clean the URL so a refresh doesn't re-trigger
-    window.history.replaceState({}, '', window.location.pathname);
-
-    (async () => {
-      setStatus('completing');
-      setError('');
-      try {
-        await completeProfile(sid); // on success, profile becomes complete → gate unmounts
-      } catch (err) {
-        setStatus('error');
-        setError(err.message || 'We could not verify your business. Please try again.');
-      }
-    })();
-  }, [completeProfile]);
-
-  const startVerification = async () => {
-    setStatus('starting');
+  // Stage 1 — look up the GSTIN in the public registry and preview it.
+  const fetchDetails = async (e) => {
+    e?.preventDefault();
+    if (!gstValid) { setError('Enter a valid 15-character GSTIN.'); return; }
+    setStatus('searching');
     setError('');
     try {
-      const { authorization_url } = await startEntityLocker();
-      if (!authorization_url) throw new Error('Could not start verification. Please try again.');
-      setStatus('redirecting');
-      window.location.href = authorization_url;
+      const res = await verifyGSTIN(clean);
+      if (!res?.success || !res.data) {
+        throw new Error(res?.error || 'We could not find that GSTIN. Please check and try again.');
+      }
+      setBusiness(res.data);
+      setStage('preview');
     } catch (err) {
-      setStatus('error');
-      setError(err.message || 'Could not start verification. Please try again.');
+      setError(err.message || 'We could not find that GSTIN. Please check and try again.');
+    } finally {
+      setStatus('idle');
     }
   };
 
-  const busy = status === 'starting' || status === 'redirecting' || status === 'completing';
+  // Stage 2 — confirm; the server re-fetches authoritatively and writes the profile.
+  const confirm = async () => {
+    setStatus('confirming');
+    setError('');
+    try {
+      await completeProfile(clean); // on success, profile becomes complete → gate unmounts
+    } catch (err) {
+      setStatus('idle');
+      setError(err.message || 'We could not complete your profile. Please try again.');
+    }
+  };
+
+  const backToInput = () => {
+    setStage('input');
+    setBusiness(null);
+    setError('');
+  };
+
+  const Row = ({ label, value }) => (
+    <div className="flex justify-between gap-3 py-1.5">
+      <span className="text-xs text-slate-500 shrink-0">{label}</span>
+      <span className="text-xs font-medium text-slate-900 text-right break-words">{value || '—'}</span>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center px-4">
@@ -61,7 +77,9 @@ export default function CompleteProfileGate() {
           </div>
           <h2 className="text-xl font-bold text-slate-900">Complete your profile</h2>
           <p className="text-sm text-slate-500 mt-1">
-            Verify your business to unlock Dotko. It takes under a minute.
+            {stage === 'preview'
+              ? 'Confirm this is your business to unlock Dotko.'
+              : 'Enter your GST number to verify your business. It takes a few seconds.'}
           </p>
         </div>
 
@@ -72,40 +90,71 @@ export default function CompleteProfileGate() {
           </div>
         )}
 
-        {status === 'completing' ? (
-          <div className="flex flex-col items-center text-center gap-3 py-6">
-            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
-            <p className="font-semibold text-slate-900">Fetching your verified business details…</p>
-            <p className="text-sm text-slate-500">Hang tight, this only takes a moment.</p>
-          </div>
-        ) : status === 'redirecting' ? (
-          <div className="flex flex-col items-center text-center gap-3 py-6">
-            <ShieldCheck className="w-8 h-8 text-brand-800" />
-            <p className="font-semibold text-slate-900">Redirecting to secure verification…</p>
-          </div>
+        {stage === 'input' ? (
+          <form onSubmit={fetchDetails} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">GST Number (GSTIN)</label>
+              <input
+                id="complete-profile-gstin"
+                type="text"
+                autoComplete="off"
+                autoCapitalize="characters"
+                value={gstin}
+                onChange={(e) => { setGstin(e.target.value.toUpperCase().replace(/\s/g, '').slice(0, 15)); setError(''); }}
+                placeholder="22AAAAA0000A1Z5"
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-brand-500"
+                maxLength={15}
+              />
+            </div>
+            <button
+              id="complete-profile-search"
+              type="submit"
+              disabled={busy || !gstValid}
+              className="w-full bg-brand-800 text-white font-semibold py-3 rounded-xl hover:bg-brand-700 transition-colors flex items-center justify-center gap-2.5 text-sm disabled:opacity-60"
+            >
+              {status === 'searching' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+              {status === 'searching' ? 'Fetching…' : 'Fetch business details'}
+            </button>
+          </form>
         ) : (
           <>
-            <div className="flex items-start gap-3 text-sm text-slate-600 bg-slate-50 rounded-xl border border-slate-100 p-4 mb-4">
-              <Lock className="w-5 h-5 text-brand-800 mt-0.5 flex-shrink-0" />
-              <p>
-                We use <span className="font-semibold text-slate-800">EntityLocker</span> to verify your
-                business via official government records. Your credentials are processed by the
-                government portal and never stored by Dotko.
-              </p>
+            <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-semibold text-slate-900 truncate">
+                  {business?.tradeName || business?.legalName}
+                </span>
+                <span className="text-[10px] bg-emerald-600 text-white font-medium px-2 py-0.5 rounded-full shrink-0">
+                  {business?.status || 'Registered'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-mono mb-2">{clean}</p>
+              <div className="divide-y divide-slate-200/70">
+                <Row label="Legal Name" value={business?.legalName} />
+                <Row label="Entity Type" value={business?.constitutionOfBusiness} />
+                <Row label="Registered" value={business?.registrationDate} />
+                <Row
+                  label="Location"
+                  value={[business?.principalAddress?.district, business?.principalAddress?.state].filter(Boolean).join(', ')}
+                />
+              </div>
             </div>
 
             <button
-              id="complete-profile-start"
-              onClick={startVerification}
+              id="complete-profile-confirm"
+              onClick={confirm}
               disabled={busy}
               className="w-full bg-brand-800 text-white font-semibold py-3 rounded-xl hover:bg-brand-700 transition-colors flex items-center justify-center gap-2.5 text-sm disabled:opacity-60"
             >
-              {status === 'starting'
-                ? <Loader2 className="w-5 h-5 animate-spin" />
-                : status === 'error'
-                  ? <RefreshCw className="w-5 h-5" />
-                  : <ShieldCheck className="w-5 h-5" />}
-              {status === 'starting' ? 'Preparing…' : status === 'error' ? 'Try Again' : 'Verify Business'}
+              {status === 'confirming' ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+              {status === 'confirming' ? 'Completing…' : 'Confirm & Continue'}
+            </button>
+
+            <button
+              onClick={backToInput}
+              disabled={busy}
+              className="w-full mt-3 text-xs text-slate-500 hover:text-slate-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Use a different GSTIN
             </button>
           </>
         )}

@@ -8,7 +8,7 @@ const RESEND_SECONDS = 30;
 /**
  * Unified phone + WhatsApp OTP entry — serves both "Sign in" and "Get started".
  * Existing number → straight to the app. New number → the dashboard's
- * profile-completion gate takes over (EntityLocker business verification).
+ * profile-completion gate takes over (GST business verification).
  */
 export default function Login() {
   const navigate = useNavigate();

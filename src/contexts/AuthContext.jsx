@@ -97,14 +97,14 @@ export function AuthProvider({ children }) {
     return { isNewUser: Boolean(data.isNewUser), profileComplete: Boolean(data.profileComplete) };
   };
 
-  // ── Profile completion (EntityLocker) ──────────────────────────────────────
+  // ── Profile completion (GST search) ────────────────────────────────────────
 
-  /** Start an EntityLocker session; returns { authorization_url } to redirect to. */
-  const startEntityLocker = () => authedFetch('/api/kyc/entitylocker/sdk/initiate', {});
-
-  /** Finish onboarding from a completed EntityLocker session, then refresh profile. */
-  const completeProfile = async (sessionId) => {
-    const data = await authedFetch('/api/phone-auth/complete-profile', { session_id: sessionId });
+  /**
+   * Finish onboarding by verifying a GSTIN against the public GST registry.
+   * The server fetches the business details and writes them to the profile.
+   */
+  const completeProfile = async (gstin) => {
+    const data = await authedFetch('/api/phone-auth/complete-profile', { gstin });
     if (data.profile) setProfile(data.profile);
     return data;
   };
@@ -122,7 +122,6 @@ export function AuthProvider({ children }) {
     profileLoading,
     sendOtp,
     verifyOtp,
-    startEntityLocker,
     completeProfile,
     refreshProfile,
     logout,
