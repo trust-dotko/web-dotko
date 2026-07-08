@@ -8,9 +8,29 @@ import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import SubmitTradeModal from '../components/SubmitTradeModal';
 import { calculateTrustScore, getTierLabel, getRiskHeadline, getTrustPhrase, getRiskColors, formatCurrency, getTradeAmount, isPaidResolved, isLatePartial, isDefault } from '../data/trustEngine';
-import { db } from '../config/firebase';
+import { db, verifyGSTIN } from '../config/firebase';
 import { getCached, setCached, TTL } from '../utils/cache';
-import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+
+/**
+ * Shape a parsed GST-registry record (from /api/gst-verify) into the business
+ * object the report renders from. Used for both the in-app router-state path and
+ * the direct-link live-fetch fallback, so the two stay in sync.
+ */
+function mapGstToBusiness(gst, d = {}) {
+  return {
+    gst,
+    name:              d.tradeName || d.legalName || gst,
+    legalName:         d.legalName || '',
+    state:             d.principalAddress?.state || d.stateCode || '',
+    city:              d.principalAddress?.district || '',
+    type:              d.constitutionOfBusiness || '',
+    incorporated:      d.registrationDate || '',
+    industry:          '',
+    registeredAddress: d.principalAddress?.fullAddress || '',
+    status:            d.status || '',
+  };
+}
 
 export default function Report() {
   const { gst }     = useParams();
@@ -46,26 +66,31 @@ export default function Report() {
           // instant back/forward nav and to trim Firestore reads.
           setCached(`company:${gst}`, biz, TTL.COMPANY);
         } else {
-          // 2. Fall back to GST API data passed via router state
+          // 2. Fall back to GST data passed via in-app router state (from a search).
           const gstData = location.state?.gstData;
           if (gstData) {
-            setBusiness({
-              gst,
-              name:               gstData.tradeName || gstData.legalName || gst,
-              state:              gstData.principalAddress?.state || gstData.stateCode || '',
-              city:               gstData.principalAddress?.district || '',
-              type:               gstData.constitutionOfBusiness || '',
-              incorporated:       gstData.registrationDate || '',
-              industry:           '',
-              registeredAddress:  gstData.principalAddress?.fullAddress || '',
-              status:             gstData.status || '',
-            });
+            setBusiness(mapGstToBusiness(gst, gstData));
           } else {
-            setNotFound(true);
+            // 3. No cached company doc and no in-app state — e.g. a direct link,
+            //    a hard refresh, or a shared URL. Fetch live from the public GST
+            //    registry so the report still renders. verifyGSTIN throws on an
+            //    unknown/invalid GSTIN, which falls through to the outer catch →
+            //    "No data found".
+            const result = await verifyGSTIN(gst);
+            const biz = mapGstToBusiness(gst, result.data);
+            setBusiness(biz);
+            setCached(`company:${gst}`, biz, TTL.COMPANY);
+            // Best-effort: seed the shared company cache so future direct links
+            // resolve instantly from Firestore (mirrors GSTSearchBar).
+            try {
+              await setDoc(doc(db, 'companies', gst), { ...biz, updatedAt: serverTimestamp() }, { merge: true });
+            } catch (e) {
+              console.warn('Could not cache company doc:', e.message);
+            }
           }
         }
 
-        // 3. Load trades subcollection
+        // 4. Load trades subcollection
         let tradesSnap;
         try {
           tradesSnap = await getDocs(query(collection(db, 'companies', gst, 'trades'), orderBy('createdAt', 'desc'), limit(100)));
