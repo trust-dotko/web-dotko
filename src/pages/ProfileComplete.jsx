@@ -7,7 +7,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
 
 /**
- * Your Profile — verified business details (read-only, sourced from EntityLocker)
+ * Your Profile — verified business details (read-only, sourced from the GST registry)
  * plus the one optional field a user may edit client-side: establishment year.
  * Business verification itself happens through the CompleteProfileGate popup.
  */

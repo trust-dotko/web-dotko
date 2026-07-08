@@ -165,34 +165,6 @@ function devApiPlugin(env) {
     }
   }
 
-  // documents = { gstn_details, company_master_details, udhyam_certificate }, meta = session status body
-  function parseEntityLockerDev(documents, meta = {}) {
-    const gstn    = documents.gstn_details            || {}
-    const company = documents.company_master_details  || {}
-    const udyam   = documents.udhyam_certificate      || {}
-    const pick    = (...vs) => vs.find(v => v && String(v).trim() !== '') ?? ''
-    const addr    = gstn.principal_address || gstn.address_details || {}
-    const legalName = pick(gstn.legal_name, gstn.legalName, company.company_name, company.name, meta.legal_name)
-    return {
-      gstin:                   pick(gstn.gstin,               gstn.gstIn,              meta.gstin),
-      legalName,
-      tradeName:               pick(gstn.trade_name,          gstn.tradeName,          meta.trade_name) || legalName,
-      status:                  pick(gstn.status,              gstn.gst_status,         meta.status, 'Active'),
-      registrationDate:        pick(gstn.registration_date,   gstn.registrationDate,   meta.registration_date),
-      constitutionOfBusiness:  pick(gstn.constitution_of_business, gstn.constitution,  company.company_category, meta.constitution_of_business),
-      principalAddress: {
-        state:       pick(addr.state,        gstn.state,    company.registered_address?.state,   meta.state),
-        district:    pick(addr.district,     addr.city,     gstn.city,   company.registered_address?.city,    meta.city),
-        fullAddress: pick(addr.full_address, addr.address,  gstn.address, company.registered_address?.address, meta.address),
-      },
-      natureOfBusinessActivities: Array.isArray(gstn.nature_of_business_activities)
-        ? gstn.nature_of_business_activities : [],
-      udyamRegistrationNumber: pick(udyam.udyam_registration_number, udyam.registration_number),
-      entityLockerVerified:    true,
-      sessionId:               meta.session_id,
-    }
-  }
-
   return {
     name: 'dev-api-middleware',
     configureServer(server) {
@@ -345,11 +317,17 @@ function devApiPlugin(env) {
         }
 
         // ---- /api/phone-auth/complete-profile ----
+        // Verify a GSTIN against the public GST registry and write the business
+        // details to the user's profile (mirrors api/phone-auth/complete-profile.js).
         if (req.url === '/api/phone-auth/complete-profile' && req.method === 'POST') {
-          const session_id = String(req.body?.session_id || '').trim()
-          if (!session_id) {
+          const clean = String(req.body?.gstin || '').trim().toUpperCase()
+          if (!clean) {
             res.statusCode = 400
-            return res.end(JSON.stringify({ error: 'session_id is required.' }))
+            return res.end(JSON.stringify({ error: 'GSTIN is required.' }))
+          }
+          if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(clean)) {
+            res.statusCode = 400
+            return res.end(JSON.stringify({ error: 'Invalid GSTIN format.' }))
           }
           try {
             const { adminAuth, adminDb } = await getAdmin()
@@ -358,35 +336,53 @@ function devApiPlugin(env) {
             const decoded = await adminAuth.verifyIdToken(authHeader.slice(7))
             const uid = decoded.uid
 
-            // Resolve verified business data (real EL or dev mock)
-            let biz
-            if (API_KEY && SECRET && !session_id.startsWith('dev-session-')) {
-              const token = await authenticate()
-              const headers = { 'Authorization': token, 'x-api-key': API_KEY, 'x-api-version': '1.0.0' }
-              const sid = encodeURIComponent(session_id)
-              const documents = {}
-              await Promise.allSettled(['gstn_details', 'company_master_details', 'udhyam_certificate'].map(async (dt) => {
-                const r = await fetch(`${BASE}/kyc/entitylocker/sessions/${sid}/documents/${dt}`, { headers })
-                const b = await r.json().catch(() => ({}))
-                if (r.ok || b.code === 200) documents[dt] = b.data ?? b
-              }))
-              biz = parseEntityLockerDev(documents, { session_id })
+            // Duplicate guard: reject if this GST already belongs to a different account.
+            const claimed = await adminDb.collection('users').where('gst', '==', clean).limit(2).get()
+            if (claimed.docs.some((d) => d.id !== uid)) {
+              res.statusCode = 409
+              return res.end(JSON.stringify({ error: 'An account already exists for this GST number. Please sign in.' }))
+            }
+
+            // Resolve verified business data (real Sandbox search, or dev mock).
+            let biz = null
+            if (API_KEY && SECRET) {
+              try {
+                const token = await authenticate()
+                const apiRes = await fetch(`${BASE}/gst/compliance/public/gstin/search`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': token, 'x-api-key': API_KEY, 'x-api-version': '1.0.0',
+                    'x-accept-cache': 'true', 'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ gstin: clean }),
+                })
+                const data = await apiRes.json()
+                if (data.code === 200 && !data.data?.error) {
+                  biz = parseGSTData(data.data?.data || data.data)
+                } else if (data.data?.error) {
+                  res.statusCode = 404
+                  return res.end(JSON.stringify({ error: data.data.error.message || 'GSTIN not found.' }))
+                }
+              } catch (e) {
+                console.warn('[dev-api] complete-profile GST search failed, using mock:', e.message)
+              }
             }
             if (!biz || !biz.gstin) {
+              // Dev fallback so the flow is testable without live GST credentials.
               biz = {
-                gstin: '24CUUPP7030B1ZL', legalName: 'KILO BYTE INDUSTRIES', tradeName: 'KILO BYTE INDUSTRIES',
+                gstin: clean, legalName: 'KILO BYTE INDUSTRIES', tradeName: 'KILO BYTE INDUSTRIES',
                 status: 'Active', constitutionOfBusiness: 'Proprietorship', registrationDate: '01/07/2017',
                 principalAddress: { state: 'Gujarat', district: 'Surat', fullAddress: '123, Industrial Area, Surat, Gujarat – 395001' },
-                natureOfBusinessActivities: ['Retail Business'], udyamRegistrationNumber: '',
+                natureOfBusinessActivities: ['Retail Business'],
               }
             }
             const profileData = {
               businessName: biz.tradeName || biz.legalName || '', legalName: biz.legalName || '', tradeName: biz.tradeName || '',
-              gst: biz.gstin || '', entityType: biz.constitutionOfBusiness || '', gstStatus: biz.status || '',
+              gst: biz.gstin || clean, entityType: biz.constitutionOfBusiness || '', gstStatus: biz.status || '',
               registrationDate: biz.registrationDate || '', state: biz.principalAddress?.state || '',
               city: biz.principalAddress?.district || '', address: biz.principalAddress?.fullAddress || '',
-              natureOfBusiness: biz.natureOfBusinessActivities || [], udyamRegistrationNumber: biz.udyamRegistrationNumber || '',
-              entityLockerVerified: true, profileComplete: true, onboardingCompleted: true, updatedAt: new Date().toISOString(),
+              natureOfBusiness: biz.natureOfBusinessActivities || [],
+              gstVerified: true, profileComplete: true, onboardingCompleted: true, updatedAt: new Date().toISOString(),
             }
             await adminDb.collection('users').doc(uid).set(profileData, { merge: true })
             const merged = (await adminDb.collection('users').doc(uid).get()).data()
@@ -415,119 +411,6 @@ function devApiPlugin(env) {
         // NOTE: /api/trade (submit/update/verify) and /api/storage/* are handled
         // by the generic delegation fallback below, which invokes the REAL
         // serverless handlers (single source of truth — no dev/prod drift).
-
-        // ---- /api/kyc/entitylocker/sdk/initiate ----
-        // Uses the same Sandbox.co.in credentials as GST verification — no new keys needed
-        if (req.url === '/api/kyc/entitylocker/sdk/initiate' && req.method === 'POST') {
-          if (API_KEY && SECRET) {
-            try {
-              const token  = await authenticate()
-              const upRes  = await fetch(`${BASE}/kyc/entitylocker/sessions/init`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type':  'application/json',
-                  'Authorization': token,
-                  'x-api-key':     API_KEY,
-                  'x-api-version': '1.0.0',
-                },
-                body: JSON.stringify({
-                  '@entity':      'in.co.sandbox.kyc.entitylocker.session.request',
-                  'flow':         'signin',
-                  'redirect_url': 'http://localhost:5173/dashboard',
-                }),
-              })
-              const upData     = await upRes.json().catch(() => ({}))
-              const session_id = upData.data?.id || upData.session_id || upData.data?.session_id || upData.data?.session?.id
-              const authorization_url = upData.data?.authorization_url || upData.authorization_url || upData.data?.session?.authorization_url
-
-              if ((upRes.ok || upData.code === 200) && session_id) {
-                console.log('[dev-api] EntityLocker initiate OK, session_id:', session_id)
-                return res.end(JSON.stringify({ session_id, authorization_url }))
-              }
-              console.warn('[dev-api] EntityLocker initiate failed:', upRes.status, upData)
-            } catch (err) {
-              console.warn('[dev-api] EntityLocker initiate error:', err.message, '— falling back to mock')
-            }
-          }
-
-          // Dev fallback: mock session so the UI is fully testable without live credentials.
-          // The completion gate will redirect here; we point back to /dashboard with the
-          // mock session id so the flow can be exercised end-to-end.
-          const mockSessionId = `dev-session-${Date.now()}`
-          console.log('[dev-api] EntityLocker initiate — mock session:', mockSessionId)
-          return res.end(JSON.stringify({
-            session_id: mockSessionId,
-            authorization_url: `http://localhost:5173/dashboard?session_id=${mockSessionId}`,
-          }))
-        }
-
-        // ---- /api/kyc/entitylocker/sdk/results ----
-        if (req.url === '/api/kyc/entitylocker/sdk/results' && req.method === 'POST') {
-          const { session_id } = req.body || {}
-          if (!session_id) {
-            res.statusCode = 400
-            return res.end(JSON.stringify({ error: 'session_id is required' }))
-          }
-
-          if (API_KEY && SECRET && !session_id.startsWith('dev-session-')) {
-            try {
-              const token   = await authenticate()
-              const headers = { 'Authorization': token, 'x-api-key': API_KEY, 'x-api-version': '1.0.0' }
-              const sid     = encodeURIComponent(session_id)
-
-              // 1. Check session status
-              const statusRes  = await fetch(`${BASE}/kyc/entitylocker/sessions/${sid}/status`, { method: 'GET', headers })
-              const statusBody = await statusRes.json().catch(() => ({}))
-              if (!statusRes.ok && statusBody.code !== 200) {
-                console.warn('[dev-api] EntityLocker status failed:', statusRes.status, statusBody)
-                throw new Error(statusBody.message || 'Status check failed')
-              }
-
-              // 2. Fetch documents in parallel
-              const DOC_TYPES = ['gstn_details', 'company_master_details', 'udhyam_certificate']
-              const documents = {}
-              await Promise.allSettled(DOC_TYPES.map(async (docType) => {
-                const r = await fetch(`${BASE}/kyc/entitylocker/sessions/${sid}/documents/${docType}`, { method: 'GET', headers })
-                const b = await r.json().catch(() => ({}))
-                if (r.ok || b.code === 200) {
-                  documents[docType] = b.data ?? b
-                } else {
-                  console.warn(`[dev-api] Doc ${docType} not available (${r.status})`)
-                }
-              }))
-
-              if (Object.keys(documents).length > 0) {
-                const data = parseEntityLockerDev(documents, statusBody.data ?? statusBody)
-                console.log('[dev-api] EntityLocker results OK, gstin:', data.gstin)
-                return res.end(JSON.stringify({ success: true, data }))
-              }
-              console.warn('[dev-api] No documents returned — falling back to mock')
-            } catch (err) {
-              console.warn('[dev-api] EntityLocker results error:', err.message, '— falling back to mock')
-            }
-          }
-
-          // Dev fallback: plausible mock business data
-          const mockData = {
-            gstin:                   '24CUUPP7030B1ZL',
-            legalName:               'KILO BYTE INDUSTRIES',
-            tradeName:               'KILO BYTE INDUSTRIES',
-            status:                  'Active',
-            constitutionOfBusiness:  'Proprietorship',
-            registrationDate:        '01/07/2017',
-            principalAddress: {
-              state:       'Gujarat',
-              district:    'Surat',
-              fullAddress: '123, Industrial Area, Surat, Gujarat – 395001',
-            },
-            natureOfBusinessActivities: ['Retail Business'],
-            panNumber:              'CUUPP7030B',
-            entityLockerVerified:   true,
-            sessionId:              session_id,
-          }
-          console.log('[dev-api] EntityLocker results — mock data for session:', session_id)
-          return res.end(JSON.stringify({ success: true, data: mockData }))
-        }
 
         // ---- Delegate any other /api/* route to the REAL Vercel handler ----
         // Adapts the Node res to the Express-like API the handlers expect, so dev

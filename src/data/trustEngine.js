@@ -55,7 +55,7 @@ function toDate(value) {
 }
 
 /**
- * parseRegistrationDate — GST/EntityLocker registry APIs return dates as
+ * parseRegistrationDate — GST registry APIs return dates as
  * "DD/MM/YYYY" (Indian format). `new Date(str)` can't parse that reliably:
  * it guesses MM/DD/YYYY, so "15/05/2018" becomes Invalid Date (no month 15)
  * and "01/07/2017" silently parses as Jan-7 instead of Jul-1. Both corrupt

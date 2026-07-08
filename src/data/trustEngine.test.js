@@ -59,7 +59,7 @@ describe('calculateTrustScore — pillar baseline (no trades)', () => {
     expect(calculateTrustScore(undefined, null).score).toBe(20);
   });
 
-  it('parses DD/MM/YYYY registration dates from the GST/EntityLocker registry (not native Date)', () => {
+  it('parses DD/MM/YYYY registration dates from the GST registry (not native Date)', () => {
     // Regression: new Date('15/05/2018') is Invalid Date (native parser guesses
     // MM/DD, and 15 isn't a month) — this silently docked Business Age to 0.
     // Real case: 24ABLFA7032N1Z8 scored 60 instead of 80 because of this.

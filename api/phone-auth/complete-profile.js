@@ -1,14 +1,14 @@
 // web/api/phone-auth/complete-profile.js — Vercel Serverless Function
 //
-// POST { session_id }  (Authorization: Bearer <idToken>)
-// Finishes onboarding for a phone-authenticated user: fetches the EntityLocker
-// session's verified business documents server-side and writes them to the user's
-// profile. The EL session must have been initiated by THIS user (binding check),
-// preventing anyone from claiming another business's verification.
+// POST { gstin }  (Authorization: Bearer <idToken>)
+// Finishes onboarding for a phone-authenticated user: looks up the GSTIN in the
+// public GST registry server-side and writes the verified business details to the
+// user's profile. If the GSTIN is already linked to a DIFFERENT account, the
+// request is rejected — one business, one account.
 
 import { db, verifyBearer, clientIp, applySecurityHeaders } from '../_firebaseAdmin.js';
 import { rateLimit } from '../_rateLimit.js';
-import { fetchEntityLockerData } from '../kyc/entitylocker/_fetch.js';
+import { GSTIN_RE, searchGstin } from '../_gst.js';
 
 export default async function handler(req, res) {
   applySecurityHeaders(res);
@@ -25,26 +25,31 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Too many requests. Please try again later.' });
   }
 
-  const session_id = String(req.body?.session_id || '').trim();
-  if (!session_id) return res.status(400).json({ error: 'session_id is required.' });
+  const clean = String(req.body?.gstin || '').trim().toUpperCase();
+  if (!clean) return res.status(400).json({ error: 'GSTIN is required.' });
+  if (!GSTIN_RE.test(clean)) return res.status(400).json({ error: 'Invalid GSTIN format.' });
 
   const uid = decoded.uid;
 
   try {
-    // Bind: the EL session must belong to the requesting user
-    const sessRef = db.collection('el_sessions').doc(session_id);
-    const sessSnap = await sessRef.get();
-    if (!sessSnap.exists || sessSnap.data().uid !== uid) {
-      return res.status(403).json({ error: 'This verification session is not valid for your account.' });
+    // Duplicate guard: reject if this GST already belongs to a different account.
+    const claimed = await db.collection('users').where('gst', '==', clean).limit(2).get();
+    if (claimed.docs.some((d) => d.id !== uid)) {
+      return res.status(409).json({ error: 'An account already exists for this GST number. Please sign in.' });
     }
 
-    const biz = await fetchEntityLockerData(session_id);
+    const result = await searchGstin(clean);
+    if (result.notFound) return res.status(404).json({ error: result.error || 'GSTIN not found.' });
+    if (result.failed || !result.data) {
+      return res.status(502).json({ error: result.error || 'Could not verify this GSTIN. Please try again.' });
+    }
 
+    const biz = result.data;
     const profileData = {
       businessName: biz.tradeName || biz.legalName || '',
       legalName: biz.legalName || '',
       tradeName: biz.tradeName || '',
-      gst: biz.gstin || '',
+      gst: biz.gstin || clean,
       entityType: biz.constitutionOfBusiness || '',
       gstStatus: biz.status || '',
       registrationDate: biz.registrationDate || '',
@@ -52,17 +57,13 @@ export default async function handler(req, res) {
       city: biz.principalAddress?.district || '',
       address: biz.principalAddress?.fullAddress || '',
       natureOfBusiness: biz.natureOfBusinessActivities || [],
-      udyamRegistrationNumber: biz.udyamRegistrationNumber || '',
-      entityLockerVerified: true,
+      gstVerified: true,
       profileComplete: true,
       onboardingCompleted: true,
       updatedAt: new Date().toISOString(),
     };
 
     await db.collection('users').doc(uid).set(profileData, { merge: true });
-    // Session consumed — prevent replay
-    await sessRef.delete().catch(() => {});
-
     const merged = (await db.collection('users').doc(uid).get()).data();
     return res.status(200).json({ success: true, profile: merged });
   } catch (err) {

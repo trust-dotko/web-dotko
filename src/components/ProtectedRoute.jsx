@@ -20,15 +20,9 @@ export default function ProtectedRoute({ children }) {
   }
 
   // Authenticated but business not yet verified → gate the entire app behind
-  // the profile-completion popup (EntityLocker). Render children underneath so
-  // the EntityLocker redirect callback (?session_id) is handled in place.
+  // the profile-completion popup (GST search).
   if (!isProfileComplete()) {
-    return (
-      <>
-        {children}
-        <CompleteProfileGate />
-      </>
-    );
+    return <CompleteProfileGate />;
   }
 
   return children;
