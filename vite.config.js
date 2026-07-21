@@ -265,12 +265,17 @@ function devApiPlugin(env) {
             res.statusCode = 400
             return res.end(JSON.stringify({ error: 'Enter a valid 10-digit Indian mobile number.' }))
           }
-          const otp = String(crypto.randomInt(100000, 1000000))
+          const isBypassPhone = Boolean(env.OTP_BYPASS_PHONE && env.OTP_BYPASS_CODE && phone === env.OTP_BYPASS_PHONE)
+          const otp = isBypassPhone ? env.OTP_BYPASS_CODE : String(crypto.randomInt(100000, 1000000))
           devOtps.set(phone, { otp, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 })
-          console.log(`\n[dev-api] ============================`)
-          console.log(`[dev-api]  OTP for +91 ${phone}: ${otp}`)
-          console.log(`[dev-api] ============================\n`)
-          await sendDevOtpWhatsApp(phone, otp) // also deliver via WhatsApp if configured
+          if (isBypassPhone) {
+            console.log(`[dev-api] Bypass phone ${phone} — fixed passcode, no WhatsApp send`)
+          } else {
+            console.log(`\n[dev-api] ============================`)
+            console.log(`[dev-api]  OTP for +91 ${phone}: ${otp}`)
+            console.log(`[dev-api] ============================\n`)
+            await sendDevOtpWhatsApp(phone, otp) // also deliver via WhatsApp if configured
+          }
           return res.end(JSON.stringify({ success: true, expiresInSeconds: 300 }))
         }
 

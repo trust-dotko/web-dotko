@@ -49,7 +49,14 @@ export default async function handler(req, res) {
       }
     }
 
-    const otp = generateOtp();
+    // Fixed-passcode bypass for a single number (e.g. an App Store/Play Store
+    // reviewer account) — set OTP_BYPASS_PHONE + OTP_BYPASS_CODE in the
+    // environment to enable. No WhatsApp message is sent for this number;
+    // the code is always the fixed value instead of a random one.
+    const isBypassPhone = Boolean(
+      process.env.OTP_BYPASS_PHONE && process.env.OTP_BYPASS_CODE && phone === process.env.OTP_BYPASS_PHONE
+    );
+    const otp = isBypassPhone ? process.env.OTP_BYPASS_CODE : generateOtp();
     await ref.set({
       hash: hashOtp(phone, otp),
       expiresAt: Date.now() + OTP_TTL_MS,
@@ -58,7 +65,9 @@ export default async function handler(req, res) {
       createdAt: snap.exists ? (snap.data().createdAt || Date.now()) : Date.now(),
     });
 
-    await sendWhatsAppOtp(phone, otp);
+    if (!isBypassPhone) {
+      await sendWhatsAppOtp(phone, otp);
+    }
 
     return res.status(200).json({ success: true, expiresInSeconds: OTP_TTL_MS / 1000 });
   } catch (err) {
